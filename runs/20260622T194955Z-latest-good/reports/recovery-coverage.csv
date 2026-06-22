@@ -1,0 +1,16 @@
+class,site_manifest,content_model,download_succeeded,normalization_succeeded
+alias,0,3,,
+asset,0,225,,
+audio,1,0,,
+css,2,0,,
+homepage,0,1,,
+html,2716,0,,
+image,208,0,,
+index,0,2575,,
+static_page,0,137,,
+text,12,0,,
+xml,2,0,,
+all,2941,2941,2941,2941
+download_failed,,,5,
+download_skipped,,,1,
+normalization_failed_or_skipped,,,,0

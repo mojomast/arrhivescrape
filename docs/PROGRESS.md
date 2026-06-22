@@ -2,7 +2,7 @@
 
 **Run ID**: `20260622T194955Z-latest-good`  
 **Started**: `2026-06-22T19:49:55Z`  
-**Last Updated**: `2026-06-22T21:32:59Z`  
+**Last Updated**: `2026-06-22T21:43:40Z`  
 
 ## Stage Status
 
@@ -18,7 +18,7 @@
 | inventory.dependencies | succeeded | 2026-06-22T21:14:22Z | 5 rows appended, 77 queries, 2 high-value resolved, 453 unresolved, 0 deferred |
 | selection.feedback-1 | succeeded | 2026-06-22T21:19:28Z | consumed 5 dependency rows; 0 net-new selected requiring download |
 | model | succeeded | 2026-06-22T21:32:59Z | 2941 modeled; alias 3, asset 225, homepage 1, index 2575, static_page 137; 2538 manual review |
-| validate | pending | | |
+| validate | blocked | 2026-06-22T21:38:45Z | QA pass 75.0%; blockers 3; public blocked by privacy |
 | privacy | succeeded | 2026-06-22T21:25:53Z | approved-private-only; high 3, medium 5, low 2, info 2; public promotion not approved |
 | promote | pending | | |
 
@@ -39,8 +39,8 @@
 | Downloads skipped | 1 |
 | Raw objects stored | 2938 |
 | Normalized files | 2941 |
-| Broken links | 0 |
-| QA failures | 0 |
+| Broken links | 682328 |
+| QA failures | 3 |
 | High-value missing dependencies | 455 |
 | Unresolved first-party dependencies | 167870 |
 | Dependency references | 575143 |
@@ -51,8 +51,11 @@
 
 ## Active Feedback Loops
 
-- _none_
+- Validation feedback triage written to `runs/20260622T194955Z-latest-good/reports/validation-feedback-triage.md`.
+- `normalize.feedback` should run for phpBB `sid` stripping, path-only staged target fallback, and relative asset context fixes; 111898 missing request URLs and 142434 missing dependency-graph rows have path-only staged targets.
+- Focused `inventory.dependencies` should run only for high-value static assets/pages; request manifest lists 455 high-value requests, and the latest dependency inventory feedback reports 453 still unresolved after 2 resolved.
+- Human validation waiver is likely needed only for residual low-value dynamic/query references after normalize feedback and high-value dependency recovery; do not waive CSS/JS, homepage/top-level pages, or critical/high-ref images before retry.
 
 ## Decisions/Waivers
 
-_none_
+- No validation waivers applied. Privacy approval is private-only and does not waive public Funnel blockers.
