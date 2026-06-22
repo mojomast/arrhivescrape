@@ -2,7 +2,7 @@
 
 **Run ID**: `20260622T194955Z-latest-good`  
 **Started**: `2026-06-22T19:49:55Z`  
-**Last Updated**: `2026-06-22T21:14:22Z`  
+**Last Updated**: `2026-06-22T21:19:28Z`  
 
 ## Stage Status
 
@@ -11,11 +11,12 @@
 | init | succeeded | 2026-06-22T19:49:55Z | Run dirs created, DB initialized |
 | inventory.primary | succeeded | 2026-06-22T19:58:25Z | 9,541 rows, 10 pages, 1 retry |
 | inventory.alias | succeeded | 2026-06-22T19:58:25Z | 20,532 rows, 22 pages |
-| selection | succeeded | 2026-06-22T20:03:12Z | 2,947 selected captures, 2,968 canonical URL identities |
+| selection | succeeded | 2026-06-22T21:19:28Z | 2,947 selected captures after feedback rerun |
 | download | succeeded | 2026-06-22T20:23:39Z | 2,941 succeeded, 5 failed, 1 skipped |
 | dependencies | succeeded | 2026-06-22T20:32:12Z | 2718 parsed, 575143 refs, 167870 unresolved, 455 high-value missing |
 | normalize | succeeded | 2026-06-22T20:35:52Z | 2,941 normalized, 6 failed/skipped |
 | inventory.dependencies | succeeded | 2026-06-22T21:14:22Z | 5 rows appended, 77 queries, 2 high-value resolved, 453 unresolved, 0 deferred |
+| selection.feedback-1 | succeeded | 2026-06-22T21:19:28Z | consumed 5 dependency rows; 0 net-new selected requiring download |
 | model | pending | | |
 | validate | pending | | |
 | privacy | pending | | |
@@ -43,10 +44,12 @@
 | High-value missing dependencies | 455 |
 | Unresolved first-party dependencies | 167870 |
 | Dependency references | 575143 |
+| Dependency rows consumed by selection.feedback-1 | 5 |
+| Net-new selected requiring download | 0 |
 
 ## Active Feedback Loops
 
-- `selection`: rerun required to consume 5 dependency CDX rows appended by `inventory.dependencies`
+- _none_
 
 ## Decisions/Waivers
 
