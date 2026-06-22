@@ -2,19 +2,19 @@
 
 Run ID: `20260622T194955Z-latest-good`
 Status: succeeded
-Generated: `2026-06-22T21:19:27Z`
+Generated: `2026-06-22T22:57:11Z`
 
 ## Summary
 
 | Metric | Value |
 | --- | ---: |
-| Raw rows | 30078 |
+| Raw rows | 30080 |
 | Selected captures | 2947 |
 | Unique canonical URL identities | 2968 |
-| Canonical records | 30078 |
+| Canonical records | 30080 |
 | Aliased records | 21290 |
 | Alternate records | 18 |
-| Rejected records | 61 |
+| Rejected records | 63 |
 | Digest-deduped URL identities | 12 |
 | Warnings | 1 |
 
@@ -26,7 +26,7 @@ Generated: `2026-06-22T21:19:27Z`
 | `image/jpeg` | 948 |
 | `text/plain` | 359 |
 | `image/gif` | 73 |
-| `application/x-shockwave-flash` | 40 |
+| `application/x-shockwave-flash` | 42 |
 | `missing` | 20 |
 | `text/css` | 16 |
 | `unk` | 16 |
@@ -42,7 +42,7 @@ Generated: `2026-06-22T21:19:27Z`
 | `html` | 28585 |
 | `image` | 1021 |
 | `text` | 359 |
-| `unknown` | 83 |
+| `unknown` | 85 |
 | `css` | 16 |
 | `audio` | 9 |
 | `xml` | 5 |
@@ -57,7 +57,7 @@ Generated: `2026-06-22T21:19:27Z`
 | `text` | 359 | 12 |
 | `html_route` | 239 | 22 |
 | `homepage` | 139 | 1 |
-| `unknown` | 62 | 0 |
+| `unknown` | 64 | 0 |
 | `css` | 16 | 2 |
 | `audio` | 9 | 1 |
 | `xml` | 5 | 2 |
@@ -67,12 +67,12 @@ Generated: `2026-06-22T21:19:27Z`
 | Reason | Records |
 | --- | ---: |
 | `same-normalized-route-or-same-cdx-digest` | 21290 |
-| `unexpected-mime-class` | 41 |
+| `unexpected-mime-class` | 43 |
 | `non-200-status;unexpected-mime-class;missing-required-cdx-field` | 20 |
 | `lower-scoring-valid-capture` | 18 |
 
 ## Warnings
-- 83 raw rows have MIME classes outside the configured expected classes.
+- 85 raw rows have MIME classes outside the configured expected classes.
 
 ## Notes
 
@@ -82,8 +82,8 @@ Generated: `2026-06-22T21:19:27Z`
 
 ## Feedback Rerun Summary
 
-- Stage: `selection.feedback-1`
-- Dependency rows consumed: 5
+- Stage: `selection.feedback-2`
+- Dependency feedback-2 rows consumed: 2
 - Prior selected captures preserved by archive URL: 2947
 - Prior selected captures no longer selected by archive URL: 0
 - Net-new selected captures not present in prior download results: 0
