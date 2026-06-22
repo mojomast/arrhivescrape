@@ -1,16 +1,9 @@
-class,site_manifest,content_model,download_succeeded,normalization_succeeded
-alias,0,3,,
-asset,0,225,,
-audio,1,0,,
-css,2,0,,
-homepage,0,1,,
-html,2716,0,,
-image,208,0,,
-index,0,2575,,
-static_page,0,137,,
-text,12,0,,
-xml,2,0,,
-all,2941,2941,2941,2941
-download_failed,,,5,
-download_skipped,,,1,
-normalization_failed_or_skipped,,,,0
+category,selected_or_staged,unresolved_gaps,notes
+audio,1,0,staged manifest entries
+css,2,0,staged manifest entries
+html,2716,0,staged manifest entries
+image,208,0,staged manifest entries
+text,12,0,staged manifest entries
+xml,2,0,staged manifest entries
+first_party_external_preserved,0,943,"absolute first-party URLs intentionally preserved; recovery coverage gaps, not broken local refs"
+high_value_dependencies,0,454,queried in inventory.dependencies.feedback-2; unavailable or unsupported Flash candidate rejected

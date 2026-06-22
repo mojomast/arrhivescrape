@@ -1,7 +1,8 @@
 # MIME Audit
 
 Run ID: `20260622T194955Z-latest-good`  
-Generated: `2026-06-22T21:38:45Z`  
+Generated: `2026-06-22T23:04:25Z`  
+Stage: `validate.feedback-1`  
 Status: `passed`
 
 ## Summary
@@ -12,7 +13,5 @@ Status: `passed`
 | Blocking MIME failures | 0 |
 | MIME warnings | 1 |
 
-
 ## Warnings
-
-- `stuff/starwars.wmv`: extension suggests video, manifest suggests text; response `text/plain`, guessed `video/x-ms-wmv`
+- `stuff/starwars.wmv`: extension suggests `video/x-ms-wmv`, manifest response `text/plain`

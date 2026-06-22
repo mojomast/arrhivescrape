@@ -2,7 +2,7 @@
 
 **Run ID**: `20260622T194955Z-latest-good`  
 **Started**: `2026-06-22T19:49:55Z`  
-**Last Updated**: `2026-06-22T22:57:11Z`  
+**Last Updated**: `2026-06-22T23:04:25Z`  
 
 ## Stage Status
 
@@ -21,7 +21,7 @@
 | selection.feedback-1 | succeeded | 2026-06-22T21:19:28Z | consumed 5 dependency rows; 0 net-new selected requiring download |
 | selection.feedback-2 | succeeded | 2026-06-22T22:57:11Z | consumed 2 dependency rows; 0 net-new selected requiring download |
 | model | succeeded | 2026-06-22T21:32:59Z | 2941 modeled; alias 3, asset 225, homepage 1, index 2575, static_page 137; 2538 manual review |
-| validate | blocked | 2026-06-22T21:38:45Z | QA pass 75.0%; blockers 3; public blocked by privacy |
+| validate | passed-with-waivers | 2026-06-22T23:04:25Z | feedback-1 QA pass 100.0%; blockers 0; waivers 2; public blocked by privacy |
 | privacy | succeeded | 2026-06-22T21:25:53Z | approved-private-only; high 3, medium 5, low 2, info 2; public promotion not approved |
 | promote | pending | | |
 
@@ -43,7 +43,7 @@
 | Raw objects stored | 2938 |
 | Normalized files | 2941 |
 | Broken local refs estimate after normalize.feedback-1 | 0 |
-| QA failures | 3 |
+| QA failures | 0 |
 | High-value missing dependencies | 455 |
 | Unresolved first-party dependencies | 167870 |
 | Dependency references | 575143 |
@@ -64,4 +64,6 @@
 
 ## Decisions/Waivers
 
-- No validation waivers applied. Privacy approval is private-only and does not waive public Funnel blockers.
+- Validation feedback-1 gate status: `passed-with-waivers`; QA pass rate `100.0%`; blocking issues `0`; waivers `2`.
+- Waiver for private-tailnet static serving only: residual preserved first-party absolute URLs/high-value dependency gaps were queried or terminally unsupported/unavailable and do not create broken local staged refs or static serving failures.
+- Public Funnel promotion remains blocked by privacy review (`approved-private-only`); no public waiver applied.
