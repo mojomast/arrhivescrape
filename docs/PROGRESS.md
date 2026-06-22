@@ -1,23 +1,24 @@
-# Recovery Progress
+# kyledurepos.com Recovery Progress
 
-Run ID: `20260622T194955Z-latest-good`
-Started: `2026-06-22T19:49:55Z`
-Last Updated: `2026-06-22T19:58:25Z`
+**Run ID**: `20260622T194955Z-latest-good`  
+**Started**: `2026-06-22T19:49:55Z`  
+**Last Updated**: `2026-06-22T20:04:11Z`  
 
 ## Stage Status
 
-| Stage | Status |
-| --- | --- |
-| init | succeeded |
-| inventory.primary | succeeded |
-| inventory.alias | succeeded |
-| selection | pending |
-| download | pending |
-| normalization | pending |
-| reconstruction | pending |
-| validation | pending |
-| promotion | pending |
-| serving | pending |
+| Stage | Status | Updated | Notes |
+|---|---|---|---|
+| init | succeeded | 2026-06-22T19:49:55Z | Run dirs created, DB initialized |
+| inventory.primary | succeeded | 2026-06-22T19:58:25Z | 9,541 rows, 10 pages, 1 retry |
+| inventory.alias | succeeded | 2026-06-22T19:58:25Z | 20,532 rows, 22 pages |
+| selection | succeeded | 2026-06-22T20:03:12Z | 2,947 selected captures, 2,968 canonical URL identities |
+| download | pending | | Waiting on selection milestone commit |
+| dependencies | pending | | |
+| normalize | pending | | |
+| model | pending | | |
+| validate | pending | | |
+| privacy | pending | | |
+| promote | pending | | |
 
 ## Metrics
 
@@ -28,8 +29,8 @@ Last Updated: `2026-06-22T19:58:25Z`
 | Inventory alias pages | 22 |
 | Inventory primary rows | 9541 |
 | Inventory alias rows | 20532 |
-| Canonical URLs | 0 |
-| Selected captures | 0 |
+| Canonical URLs | 2968 |
+| Selected captures | 2947 |
 | Downloads attempted | 0 |
 | Downloads succeeded | 0 |
 | Downloads failed | 0 |
