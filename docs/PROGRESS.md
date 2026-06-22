@@ -2,7 +2,7 @@
 
 **Run ID**: `20260622T194955Z-latest-good`  
 **Started**: `2026-06-22T19:49:55Z`  
-**Last Updated**: `2026-06-22T21:19:28Z`  
+**Last Updated**: `2026-06-22T21:32:59Z`  
 
 ## Stage Status
 
@@ -17,9 +17,9 @@
 | normalize | succeeded | 2026-06-22T20:35:52Z | 2,941 normalized, 6 failed/skipped |
 | inventory.dependencies | succeeded | 2026-06-22T21:14:22Z | 5 rows appended, 77 queries, 2 high-value resolved, 453 unresolved, 0 deferred |
 | selection.feedback-1 | succeeded | 2026-06-22T21:19:28Z | consumed 5 dependency rows; 0 net-new selected requiring download |
-| model | pending | | |
+| model | succeeded | 2026-06-22T21:32:59Z | 2941 modeled; alias 3, asset 225, homepage 1, index 2575, static_page 137; 2538 manual review |
 | validate | pending | | |
-| privacy | pending | | |
+| privacy | succeeded | 2026-06-22T21:25:53Z | approved-private-only; high 3, medium 5, low 2, info 2; public promotion not approved |
 | promote | pending | | |
 
 ## Metrics
@@ -46,6 +46,8 @@
 | Dependency references | 575143 |
 | Dependency rows consumed by selection.feedback-1 | 5 |
 | Net-new selected requiring download | 0 |
+| Content model records | 2941 |
+| Content model manual review | 2538 |
 
 ## Active Feedback Loops
 
