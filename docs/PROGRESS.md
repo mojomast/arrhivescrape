@@ -2,7 +2,7 @@
 
 **Run ID**: `20260622T194955Z-latest-good`  
 **Started**: `2026-06-22T19:49:55Z`  
-**Last Updated**: `2026-06-22T23:04:25Z`  
+**Last Updated**: `2026-06-22T23:12:53Z`  
 
 ## Stage Status
 
@@ -23,7 +23,7 @@
 | model | succeeded | 2026-06-22T21:32:59Z | 2941 modeled; alias 3, asset 225, homepage 1, index 2575, static_page 137; 2538 manual review |
 | validate | passed-with-waivers | 2026-06-22T23:04:25Z | feedback-1 QA pass 100.0%; blockers 0; waivers 2; public blocked by privacy |
 | privacy | succeeded | 2026-06-22T21:25:53Z | approved-private-only; high 3, medium 5, low 2, info 2; public promotion not approved |
-| promote | pending | | |
+| promote | succeeded | 2026-06-22T23:12:53Z | promoted release; Caddy loopback validated at `http://127.0.0.1:18080/`; Tailscale Serve not changed; Funnel not enabled |
 
 ## Metrics
 
@@ -52,6 +52,9 @@
 | Net-new selected requiring download | 0 |
 | Content model records | 2941 |
 | Content model manual review | 2538 |
+| Promoted release files | 2941 |
+| Promoted manifest records | 2941 |
+| Serve validation failures | 0 |
 
 ## Active Feedback Loops
 
@@ -67,3 +70,6 @@
 - Validation feedback-1 gate status: `passed-with-waivers`; QA pass rate `100.0%`; blocking issues `0`; waivers `2`.
 - Waiver for private-tailnet static serving only: residual preserved first-party absolute URLs/high-value dependency gaps were queried or terminally unsupported/unavailable and do not create broken local staged refs or static serving failures.
 - Public Funnel promotion remains blocked by privacy review (`approved-private-only`); no public waiver applied.
+- Promotion completed to `recovered/kyledurepos.com/releases/20260622T194955Z-latest-good/site/`; `recovered/kyledurepos.com/site` now points to `releases/20260622T194955Z-latest-good/site`.
+- Caddy system config was not modified; loopback serving uses `runs/20260622T194955Z-latest-good/ops/Caddyfile` and validated exact paths, directory indexes, missing-path 404s, and non-site artifact 404s.
+- Tailscale Serve was not reconfigured because the current node already has unrelated Serve handlers and `pwned.ussyco.de` is not the node's Tailscale DNS/cert domain. Public Funnel remains forbidden and was not enabled.
