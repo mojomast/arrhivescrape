@@ -1,0 +1,8 @@
+[project]
+name = "archive-recovery-toolkit"
+version = "0.1.0"
+description = "Reusable Wayback/CDX static-site recovery toolkit"
+requires-python = ">=3.11"
+
+[project.scripts]
+archive-recovery = "archive_recovery.cli:main"

@@ -1,9 +1,0 @@
-category,selected_or_staged,unresolved_gaps,notes
-audio,1,0,staged manifest entries
-css,2,0,staged manifest entries
-html,2716,0,staged manifest entries
-image,208,0,staged manifest entries
-text,12,0,staged manifest entries
-xml,2,0,staged manifest entries
-first_party_external_preserved,0,943,"absolute first-party URLs intentionally preserved; recovery coverage gaps, not broken local refs"
-high_value_dependencies,0,454,queried in inventory.dependencies.feedback-2; unavailable or unsupported Flash candidate rejected

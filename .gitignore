@@ -1,0 +1,66 @@
+# Runtime state and local databases
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Raw downloads and generated recovery output
+raw/
+recovered/
+runs/
+logs/
+site/
+dist/
+build/
+public/
+out/
+
+# Partial and temporary downloads
+*.part
+*.tmp
+*.download
+*.crdownload
+
+# Logs and process files
+*.log
+*.out
+*.err
+*.pid
+
+# Downloaded archives and packaged blobs
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
+
+# Local serving and deployment operations
+Caddyfile
+caddy*
+nginx*
+tailscale*
+*.service
+*.env
+*.env.*
+*.pem
+*.key
+*.crt
+*.p12
+
+# Legacy local one-off recovery scripts from completed runs
+tools/*.py
+!tools/README.md
+
+# Python cache
+__pycache__/
+*.py[cod]
