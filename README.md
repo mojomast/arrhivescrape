@@ -17,9 +17,11 @@ The normal flow is:
 3. Query CDX with `collapse=digest`, pagination, aliases, and rate limits.
 4. Select captures using the target mode: `latest-good`, date-specific, full captures, or selected eras.
 5. Download content through Wayback `id_` replay URLs into `raw/sha256/`.
-6. Normalize URLs, assets, forms, and internal links into `runs/<run_id>/staging/normalized-site/`.
-7. Validate MIME types, broken links, privacy constraints, and static serving behavior.
-8. Promote approved output to `recovered/<domain>/releases/<run_id>/site/` and optionally serve it.
+6. Discover first-party static dependencies from downloaded HTML/CSS.
+7. Optionally run dependency recovery to append CDX rows for missing first-party linked URLs, then rerun select, download, dependencies, normalize, and validate after recovered captures are available.
+8. Normalize URLs, assets, forms, and internal links into `runs/<run_id>/staging/normalized-site/`.
+9. Validate MIME types, broken links, privacy constraints, and static serving behavior.
+10. Promote approved output to `recovered/<domain>/releases/<run_id>/site/` and optionally serve it.
 
 Generated data, raw downloads, logs, run directories, SQLite databases, and promoted site output are intentionally ignored by git.
 
@@ -45,6 +47,7 @@ python -m archive_recovery new --domain example.com --non-interactive
 ```
 
 This writes `configs/example.com.toml` and creates a scaffolded `runs/<run_id>/` directory.
+Use `--path-prefix /blog` to start with a subtree instead of a whole host. The initial CDX inventory queries the configured host and aliases with a prefix match. This is a starting inventory, not proof the subtree is complete. Linked first-party URLs found later in downloaded HTML/CSS are reported as dependencies and may require `dependency-recovery` follow-up runs or a higher/uncapped CDX limit before they can be rewritten to local staged files.
 
 Then initialize and run the staged recovery tools:
 
@@ -54,10 +57,22 @@ python -m archive_recovery inventory --config configs/example.com.toml --run-id 
 python -m archive_recovery select --config configs/example.com.toml --run-id my-first-run
 python -m archive_recovery download --config configs/example.com.toml --run-id my-first-run
 python -m archive_recovery dependencies --config configs/example.com.toml --run-id my-first-run
+python -m archive_recovery dependency-recovery --config configs/example.com.toml --run-id my-first-run
+python -m archive_recovery select --config configs/example.com.toml --run-id my-first-run
+python -m archive_recovery download --config configs/example.com.toml --run-id my-first-run
+python -m archive_recovery dependencies --config configs/example.com.toml --run-id my-first-run
 python -m archive_recovery normalize --config configs/example.com.toml --run-id my-first-run
 python -m archive_recovery validate --config configs/example.com.toml --run-id my-first-run
 python -m archive_recovery captures-browser --config configs/example.com.toml --run-id my-first-run
 ```
+
+For private direct tailnet inspection without Tailscale Serve or Funnel:
+
+```bash
+python -m archive_recovery serve-site --runs-root runs --run-id my-first-run --tailscale --port 18082
+```
+
+This binds the normalized staging site directly to the machine's Tailscale IP. It serves only `runs/<run_id>/staging/normalized-site/` and does not expose the web UI, manifests, raw blobs, logs, or reports. It does not configure Tailscale Serve or Funnel.
 
 The same commands are available through the installed script as `archive-recovery ...`.
 
@@ -83,7 +98,7 @@ Key local endpoints:
 - `GET /runs` and `GET /runs/<run_id>` show run status, metrics, events, stage readiness, gated stage controls, and artifacts.
 - `POST /runs` or `POST /api/runs` initializes a run from a config and freezes the normalized run config.
 - `GET /api/runs/<run_id>/stages` returns readiness, requirements, outputs, completed state, blockers, and `ready` flags for each stage.
-- `POST /api/runs/<run_id>/stages/<stage>` starts `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, or `captures-browser` when the run is ready for that stage.
+- `POST /api/runs/<run_id>/stages/<stage>` starts `inventory`, `select`, `download`, `dependencies`, `dependency-recovery`, `normalize`, `validate`, or `captures-browser` when the run is ready for that stage.
 - `GET /api/status`, `/api/runs/<run_id>`, `/api/runs/<run_id>/status`, `/api/runs/<run_id>/events`, `/api/runs/<run_id>/events/stream`, `/api/runs/<run_id>/artifacts`, `/api/runs/<run_id>/objects`, and object detail/source/preview/download/bytes APIs provide machine-readable run state, event streams, artifact listings, and indexed object library access.
 - `GET /runs/<run_id>/objects` opens the object library, and `GET /runs/<run_id>/objects/<object_id>` opens the unified viewer for indexed artifacts and raw blobs referenced by manifests.
 - `GET /runs/<run_id>/preview` opens a trusted wrapper around a sandboxed staging iframe. `GET /runs/<run_id>/site/` serves private normalized staging files with `X-Robots-Tag: noindex, noarchive` and a restrictive CSP.
@@ -96,7 +111,7 @@ The tracked suite is now built around migrated generic package modules for the m
 
 ## Configure A Target
 
-The interview asks for canonical domain, aliases, target mode, Wayback/CDX settings, rate limits, third-party asset policy, output paths, privacy/publication policy, and Caddy/Tailscale/public serving preference. The generated TOML is human-editable, and each run freezes a normalized JSON copy into `runs/<run_id>/config/run-config.json`.
+The interview asks for canonical domain, aliases, optional path prefix, target mode, Wayback/CDX settings, rate limits, third-party asset policy, output paths, privacy/publication policy, and Caddy/Tailscale/public serving preference. The generated TOML is human-editable, and each run freezes a normalized JSON copy into `runs/<run_id>/config/run-config.json`.
 
 ## Validation And Publication
 

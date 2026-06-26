@@ -15,6 +15,8 @@ from archive_recovery.cli import (
     clean_host,
     render_toml,
     split_hosts,
+    clean_path_prefix,
+    default_alias_for,
 )
 from archive_recovery.config import ConfigError, RecoveryConfig, load_config
 from archive_recovery.context import initialize_run
@@ -100,7 +102,8 @@ def interview_from_payload(payload: dict[str, Any]) -> InterviewConfig:
     config_path = config_path_under_configs(domain, str(payload.get("config_name") or "")).as_posix()
     return InterviewConfig(
         domain=domain,
-        aliases=split_hosts(str(payload.get("aliases") or f"www.{domain}")),
+        aliases=split_hosts(str(payload.get("aliases") or default_alias_for(domain))),
+        path_prefix=clean_path_prefix(str(payload.get("path_prefix") or "/")),
         target_mode=target_mode,
         target_date=str(payload.get("target_date") or ""),
         cdx_endpoint=str(payload.get("cdx_endpoint") or "https://web.archive.org/cdx/search/cdx"),
@@ -188,6 +191,7 @@ STAGE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "select": ("manifests/inventory.raw.jsonl",),
     "download": ("manifests/selection.pruned.jsonl",),
     "dependencies": ("manifests/selection.pruned.jsonl", "manifests/download.results.jsonl"),
+    "dependency-recovery": ("manifests/inventory.raw.jsonl", "manifests/missing-dependency-requests.jsonl"),
     "normalize": ("manifests/selection.pruned.jsonl", "manifests/inventory.canonical.jsonl", "manifests/download.results.jsonl"),
     "validate": ("manifests/site.manifest.jsonl", "staging/normalized-site/"),
     "captures-browser": ("manifests/inventory.raw.jsonl",),
@@ -198,6 +202,7 @@ STAGE_OUTPUTS: dict[str, tuple[str, ...]] = {
     "select": ("manifests/selection.pruned.jsonl", "manifests/inventory.canonical.jsonl"),
     "download": ("manifests/download.results.jsonl",),
     "dependencies": ("manifests/dependency-graph.jsonl", "manifests/missing-dependency-requests.jsonl"),
+    "dependency-recovery": ("manifests/inventory.raw.jsonl", "cdx/dependency-pages/", "reports/dependency-recovery-report.md"),
     "normalize": ("manifests/site.manifest.jsonl", "manifests/normalization.results.jsonl"),
     "validate": ("reports/validation-report.md", "reports/external-links.json"),
     "captures-browser": ("reports/captures-browser/index.html", "reports/captures-browser/captures.json"),

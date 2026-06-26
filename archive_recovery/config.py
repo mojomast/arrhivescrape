@@ -32,6 +32,7 @@ class RecoveryConfig:
     domain: str
     canonical_host: str
     alias_hosts: tuple[str, ...]
+    path_prefix: str
     target_mode: str
     paths: dict[str, str]
 
@@ -80,6 +81,7 @@ def load_config(path: str | Path) -> RecoveryConfig:
     domain = _host(scope, "domain")
     canonical_host = _host(scope, "canonical_host")
     alias_hosts = tuple(_host_value(item, "scope.alias_hosts") for item in _str_list(scope, "alias_hosts", default=[]))
+    path_prefix = _path_prefix(scope.get("path_prefix", "/"))
     target_mode = _str(target, "mode")
 
     string_paths: dict[str, str] = {}
@@ -99,6 +101,7 @@ def load_config(path: str | Path) -> RecoveryConfig:
         domain=domain,
         canonical_host=canonical_host,
         alias_hosts=alias_hosts,
+        path_prefix=path_prefix,
         target_mode=target_mode,
         paths=string_paths,
     )
@@ -142,4 +145,15 @@ def _host_value(value: str, key: str) -> str:
     cleaned = value.strip().lower().rstrip(".")
     if not HOST_RE.match(cleaned):
         raise ConfigError(f"{key} must be a valid host, got {value!r}")
+    return cleaned
+
+
+def _path_prefix(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return "/"
+    cleaned = "/" + value.strip().strip("/")
+    if cleaned == "/":
+        return "/"
+    if any(part in {".", ".."} for part in cleaned.split("/")):
+        raise ConfigError(f"scope.path_prefix must not contain . or .. segments, got {value!r}")
     return cleaned

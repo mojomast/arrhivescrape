@@ -64,6 +64,7 @@ class RunContext:
                 "domain": self.config.domain,
                 "canonical_host": self.config.canonical_host,
                 "alias_hosts": list(self.config.alias_hosts),
+                "path_prefix": self.config.path_prefix,
             },
             "target_mode": self.config.target_mode,
             "paths": {

@@ -107,6 +107,26 @@ def is_first_party(url: str, canonical_host: str, aliases: set[str]) -> bool:
     return split.scheme.lower() in {"http", "https"} and (host == canonical_host or host.endswith("." + canonical_host) or host in aliases or host == "www." + canonical_host)
 
 
+def in_path_scope(url: str, path_prefix: str) -> bool:
+    if path_prefix == "/":
+        return True
+    path = re.sub(r"/{2,}", "/", unquote(urlsplit(url).path or "/"))
+    return path == path_prefix or path.startswith(path_prefix.rstrip("/") + "/")
+
+
+def class_for_reference(url: str) -> str:
+    suffix = PurePosixPath(urlsplit(url).path).suffix.lower()
+    if suffix in HTML_EXTS or not suffix:
+        return "html"
+    if suffix in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico"}:
+        return "image"
+    if suffix in {".css"}:
+        return "css"
+    if suffix in {".js", ".mjs"}:
+        return "javascript"
+    return "unknown"
+
+
 def unwrap_wayback(url: str) -> str:
     split = urlsplit(url)
     if (split.hostname or "").lower() == "web.archive.org":
@@ -162,11 +182,16 @@ def relative_url(from_path: str, to_path: str, fragment: str = "") -> str:
     return rel + (("#" + fragment) if fragment else "")
 
 
-def rewrite_reference(value: str, base_url: str, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str], stats: Counter, unresolved: set[str]) -> str:
+def rewrite_reference(value: str, base_url: str, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str], path_prefix: str, stats: Counter, unresolved: set[str]) -> str:
     raw = html.unescape(value or "").strip()
     if not raw or raw.startswith(("data:", "mailto:", "tel:", "javascript:", "#")):
         return value
-    abs_url = unwrap_wayback(urljoin(base_url, raw))
+    raw_host = raw.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0].lower().rstrip(".")
+    if "://" not in raw and raw_host and (raw_host == canonical_host or raw_host in aliases or raw_host == "www." + canonical_host):
+        abs_url = "http://" + raw
+    else:
+        abs_url = urljoin(base_url, raw)
+    abs_url = unwrap_wayback(abs_url)
     split = urlsplit(abs_url)
     if is_first_party(abs_url, canonical_host, aliases):
         key = normalized_url(urlunsplit((split.scheme, split.netloc, split.path, split.query, "")), canonical_host, aliases)
@@ -174,22 +199,22 @@ def rewrite_reference(value: str, base_url: str, from_path: str, route_map: dict
         if target:
             stats["links_rewritten"] += 1
             return relative_url(from_path, target, split.fragment)
-        stats["unresolved_internal_links"] += 1
         unresolved.add(key)
+        return abs_url
     elif urlsplit(raw).scheme or raw.startswith("//"):
         stats["external_links_preserved"] += 1
     return value
 
 
-def rewrite_css_text(css: str, base_url: str, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str], stats: Counter, unresolved: set[str]) -> str:
+def rewrite_css_text(css: str, base_url: str, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str], path_prefix: str, stats: Counter, unresolved: set[str]) -> str:
     def url_repl(match: re.Match) -> str:
         quote_char = match.group("q") or ""
-        rewritten = rewrite_reference(match.group("url").strip(), base_url, from_path, route_map, canonical_host, aliases, stats, unresolved)
+        rewritten = rewrite_reference(match.group("url").strip(), base_url, from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved)
         return f"url({quote_char}{rewritten}{quote_char})"
 
     def import_repl(match: re.Match) -> str:
         quote_char = match.group("q")
-        rewritten = rewrite_reference(match.group("url").strip(), base_url, from_path, route_map, canonical_host, aliases, stats, unresolved)
+        rewritten = rewrite_reference(match.group("url").strip(), base_url, from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved)
         return f"@import {quote_char}{rewritten}{quote_char}"
 
     return CSS_URL_RE.sub(url_repl, CSS_IMPORT_RE.sub(import_repl, css))
@@ -237,7 +262,7 @@ def render_attrs(attrs_text: str, updates: dict[str, str | None]) -> str:
     return "".join(pieces)
 
 
-def rewrite_html(markup: str, base_url: str, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str], stats: Counter, unresolved: set[str]) -> str:
+def rewrite_html(markup: str, base_url: str, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str], path_prefix: str, stats: Counter, unresolved: set[str]) -> str:
     markup = strip_wayback_artifacts(markup, stats)
 
     def tag_repl(match: re.Match) -> str:
@@ -255,31 +280,31 @@ def rewrite_html(markup: str, base_url: str, from_path: str, route_map: dict[str
             stats["forms_neutralized"] += 1
         for attr in URL_ATTRS:
             if attr in found and not (tag == "form" and attr == "action"):
-                updates[attr] = rewrite_reference(found[attr], base_url, from_path, route_map, canonical_host, aliases, stats, unresolved)
+                updates[attr] = rewrite_reference(found[attr], base_url, from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved)
         if "srcset" in found:
             parts = []
             for src in split_srcset(found["srcset"]):
-                parts.append(rewrite_reference(src, base_url, from_path, route_map, canonical_host, aliases, stats, unresolved))
+                parts.append(rewrite_reference(src, base_url, from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved))
             updates["srcset"] = ", ".join(parts)
         if "style" in found:
-            updates["style"] = rewrite_css_text(found["style"], base_url, from_path, route_map, canonical_host, aliases, stats, unresolved)
+            updates["style"] = rewrite_css_text(found["style"], base_url, from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved)
         return f"<{match.group('tag')}{render_attrs(attrs, updates)}{match.group('slash')}>"
 
     markup = TAG_RE.sub(tag_repl, markup)
-    markup = re.sub(r"<style\b([^>]*)>(.*?)</style\s*>", lambda m: f"<style{m.group(1)}>" + rewrite_css_text(m.group(2), base_url, from_path, route_map, canonical_host, aliases, stats, unresolved) + "</style>", markup, flags=re.I | re.S)
+    markup = re.sub(r"<style\b([^>]*)>(.*?)</style\s*>", lambda m: f"<style{m.group(1)}>" + rewrite_css_text(m.group(2), base_url, from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved) + "</style>", markup, flags=re.I | re.S)
     return markup
 
 
-def transform(record: dict, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str]) -> tuple[bytes, Counter, list[str], str | None]:
+def transform(record: dict, from_path: str, route_map: dict[str, str], canonical_host: str, aliases: set[str], path_prefix: str) -> tuple[bytes, Counter, list[str], str | None]:
     raw = Path(record["raw_path"]).read_bytes()
     cls = record["content_class"]
     if cls in {"html", "css"}:
         text = decode_text(raw, record.get("response_content_type"))
         stats: Counter = Counter(); unresolved: set[str] = set()
         if cls == "html":
-            out = rewrite_html(text, record["original_url"], from_path, route_map, canonical_host, aliases, stats, unresolved)
+            out = rewrite_html(text, record["original_url"], from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved)
         else:
-            out = rewrite_css_text(text, record["original_url"], from_path, route_map, canonical_host, aliases, stats, unresolved)
+            out = rewrite_css_text(text, record["original_url"], from_path, route_map, canonical_host, aliases, path_prefix, stats, unresolved)
         return out.encode("utf-8"), stats, sorted(unresolved), "utf-8"
     return raw, Counter(), [], None
 
@@ -302,7 +327,7 @@ def run_normalize(context: RunContext, *, selection_path: Path | None = None, ca
     site_manifest_path = site_manifest_path or context.run_dir / "manifests" / "site.manifest.jsonl"
     report_path = report_path or context.run_dir / "reports" / "normalization-report.md"
     mime_audit_path = mime_audit_path or context.run_dir / "reports" / "mime-audit.md"
-    canonical_host = context.config.domain.lower(); aliases = {h.lower() for h in context.config.alias_hosts}
+    canonical_host = context.config.domain.lower(); aliases = {h.lower() for h in context.config.alias_hosts}; path_prefix = context.config.path_prefix
     selections = {r.get("selection_id"): r for r in read_jsonl(selection_path) if r.get("selection_id")}
     downloads = [r for r in read_jsonl(download_path) if r.get("fetch_state") == "succeeded" and r.get("validation_state") == "valid" and r.get("raw_path")]
     canonical_rows = list(read_jsonl(canonical_path)) if canonical_path.exists() else []
@@ -328,7 +353,7 @@ def run_normalize(context: RunContext, *, selection_path: Path | None = None, ca
 
     path_groups: dict[str, list[dict]] = defaultdict(list)
     for item in items:
-        data, stats, unresolved, encoding = transform(item, item["base_output_path"], base_route, canonical_host, aliases)
+        data, stats, unresolved, encoding = transform(item, item["base_output_path"], base_route, canonical_host, aliases, path_prefix)
         item.update({"first_final_sha256": sha256_bytes(data), "first_stats": stats, "first_unresolved": unresolved, "encoding": encoding})
         path_groups[item["base_output_path"]].append(item)
     collisions: list[dict] = []
@@ -366,13 +391,13 @@ def run_normalize(context: RunContext, *, selection_path: Path | None = None, ca
     normalization_records: list[dict] = []; site_by_path: dict[str, dict] = {}; unresolved_all: set[str] = set(); mime_counter: Counter = Counter()
     transform_version = "wayback-cleanup-v1"
     for item in items:
-        data, stats, unresolved, encoding = transform(item, item["output_path"], final_route, canonical_host, aliases)
+        data, stats, unresolved, encoding = transform(item, item["output_path"], final_route, canonical_host, aliases, path_prefix)
         final_sha = sha256_bytes(data); output_path = item["output_path"]
         if output_path not in site_by_path:
             atomic_write_bytes(staging_site / output_path, data)
             site_by_path[output_path] = {"run_id": context.run_id, "output_path": output_path, "source_url": item.get("original_url"), "normalized_url": item.get("normalized_url"), "timestamp": item.get("requested_timestamp") or item.get("selected_timestamp"), "archive_url": item.get("archive_url"), "raw_sha256": item.get("raw_sha256"), "final_sha256": final_sha, "content_class": item["content_class"], "response_content_type": item.get("response_content_type"), "transform_version": transform_version, "provenance_ref": item.get("job_id"), "tags": sorted(set(item.get("tags") or []) | {"normalized"})}
         unresolved_all.update(unresolved); mime_counter[item["content_class"]] += 1
-        normalization_records.append({"run_id": context.run_id, "original_url": item.get("original_url"), "normalized_url": item.get("normalized_url"), "timestamp": item.get("requested_timestamp") or item.get("selected_timestamp"), "archive_url": item.get("archive_url"), "raw_sha256": item.get("raw_sha256"), "final_sha256": final_sha, "output_path": output_path, "content_class": item["content_class"], "transform_version": transform_version, "artifacts_removed": int(stats.get("artifacts_removed", 0)), "forms_neutralized": int(stats.get("forms_neutralized", 0)), "links_rewritten": int(stats.get("links_rewritten", 0)), "unresolved_internal_links": len(unresolved), "unresolved_internal_link_targets": unresolved[:25], "external_links_preserved": int(stats.get("external_links_preserved", 0)), "collision_status": item["collision_status"], "normalization_state": "succeeded", "encoding": encoding, "tags": sorted(set(item.get("tags") or []) | {"normalized"})})
+        normalization_records.append({"run_id": context.run_id, "original_url": item.get("original_url"), "normalized_url": item.get("normalized_url"), "timestamp": item.get("requested_timestamp") or item.get("selected_timestamp"), "archive_url": item.get("archive_url"), "raw_sha256": item.get("raw_sha256"), "final_sha256": final_sha, "output_path": output_path, "content_class": item["content_class"], "transform_version": transform_version, "artifacts_removed": int(stats.get("artifacts_removed", 0)), "forms_neutralized": int(stats.get("forms_neutralized", 0)), "links_rewritten": int(stats.get("links_rewritten", 0)), "unresolved_links_localized": int(stats.get("unresolved_links_localized", 0)), "unresolved_internal_links": len(unresolved), "unresolved_internal_link_targets": unresolved[:25], "external_links_preserved": int(stats.get("external_links_preserved", 0)), "collision_status": item["collision_status"], "normalization_state": "succeeded", "encoding": encoding, "tags": sorted(set(item.get("tags") or []) | {"normalized"})})
 
     site_records = [site_by_path[p] for p in sorted(site_by_path)]
     write_jsonl(normalization_path, normalization_records); write_jsonl(site_manifest_path, site_records)

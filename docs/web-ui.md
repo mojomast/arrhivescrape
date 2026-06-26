@@ -27,7 +27,7 @@ Open `http://127.0.0.1:18080/`. The default bind is loopback-only. To bind outsi
 
 For a browser-only setup, open `/targets/new`, create a conservative target config under `configs/`, then open `/runs` and initialize a run from that config. The browser form uses the same TOML renderer and validation as `archive-recovery new`; it accepts a simple `.toml` filename only and writes under `configs/`.
 
-For private tailnet access, prefer a local web process plus an explicit Tailscale-only exposure. Keep it off the public internet unless the target has passed validation and privacy review. One direct tailnet option is:
+For private tailnet access to the operator web UI, prefer a local web process plus an explicit Tailscale-only exposure. Keep it off the public internet unless the target has passed validation and privacy review. One direct web UI bind option is:
 
 ```bash
 TAILSCALE_IP=$(tailscale ip -4)
@@ -50,8 +50,17 @@ tailscale serve status
 - Browser-created configs are written under `configs/`; existing configs are not overwritten unless `force=true` is submitted.
 - Browser-created runs must use a config whose `paths.runs_root` matches the web process `--runs-root`; initialization freezes `runs/<run_id>/config/run-config.json` and registers the run in the configured SQLite state database.
 - Run config, manifests, reports, logs, and status stay under the existing ignored run directory layout.
-- Stage output is produced by the same package pipeline modules used by `archive-recovery inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, and `captures-browser`.
+- Stage output is produced by the same package pipeline modules used by `archive-recovery inventory`, `select`, `download`, `dependencies`, `dependency-recovery`, `normalize`, `validate`, and `captures-browser`.
 - HTML forms and unsafe API methods require CSRF tokens. Browser-originated unsafe requests are checked with Origin/Referer and Fetch Metadata headers, and all requests must use an allowed Host header.
+- Path-scoped targets use `[scope].path_prefix`; initial inventory queries CDX with prefix matching, then dependency discovery reports linked first-party URLs that may need a follow-up dependency recovery pass before normalization can rewrite them locally.
+
+## Scoped Recovery Notes
+
+Path-scoped recovery starts with a prefix inventory: the first CDX query asks for the configured host or alias plus `[scope].path_prefix`. The dependency stage then inspects downloaded HTML/CSS and expands awareness to linked first-party URLs, including configured aliases and same-domain/subdomain first-party hosts.
+
+A low CDX limit is a smoke scrape: useful for testing config, normalization, and preview safety. A complete scrape means exhausting or resuming CDX inventory, running dependency recovery for first-party missing requests, rerunning selection/download/dependencies/normalize/validate, and checking reports until missing first-party dependencies are acceptable or resolved.
+
+If old-domain links remain in preview, do not assume publication is ready. They can be links hidden in scripts, unsupported attributes, externalized references, out-of-scope URLs, or first-party dependencies that have not been recovered yet. Inspect `reports/dependency-report.md`, `manifests/missing-dependency-requests.jsonl`, `reports/dependency-recovery-report.md`, `reports/normalization-report.md`, and validation output before widening scope or publishing.
 
 ## Pages
 
@@ -68,7 +77,7 @@ tailscale serve status
 
 ## Browser Target And Run Workflow
 
-1. Open `/targets/new` and enter the canonical domain, aliases, target mode, CDX limits, third-party policy, publication policy, and serving preference.
+1. Open `/targets/new` and enter the canonical domain, aliases, optional path prefix such as `/blog`, target mode, CDX limits, third-party policy, publication policy, and serving preference.
 2. Submit the form to write `configs/<domain>.toml` or a simple custom `.toml` filename under `configs/`.
 3. Open `/runs`, select the config, optionally enter a run ID, and initialize the run.
 4. Open `/runs/<run_id>` and run stages in readiness order.
@@ -84,6 +93,7 @@ From a run page, the UI can start these stages:
 - `select`
 - `download`
 - `dependencies`
+- `dependency-recovery`
 - `normalize`
 - `validate`
 - `captures-browser`
@@ -98,11 +108,24 @@ Readiness requirements:
 - `select`: `manifests/inventory.raw.jsonl`.
 - `download`: `manifests/selection.pruned.jsonl`.
 - `dependencies`: `manifests/selection.pruned.jsonl` and `manifests/download.results.jsonl`.
+- `dependency-recovery`: `manifests/inventory.raw.jsonl` and `manifests/missing-dependency-requests.jsonl`.
 - `normalize`: `manifests/selection.pruned.jsonl`, `manifests/inventory.canonical.jsonl`, and `manifests/download.results.jsonl`.
 - `validate`: `manifests/site.manifest.jsonl` and non-empty `staging/normalized-site/`.
 - `captures-browser`: `manifests/inventory.raw.jsonl`.
 
-The web runner keeps options intentionally narrow. The visible run page exposes `inventory` `force` and `resume_key`; other stages use their pipeline defaults. The normalize control warns that staging output is cleared before regenerated files are written.
+The web runner keeps options intentionally narrow. The visible run page exposes `inventory` `force` and `resume_key`; other stages use their pipeline defaults. The dependency recovery control warns that it appends first-party inventory rows and that operators should rerun `select`, `download`, `dependencies`, `normalize`, and `validate`. The normalize control warns that staging output is cleared before regenerated files are written.
+
+## Direct Tailnet Staging Host
+
+For a quick private link over the tailnet without Tailscale Serve or Funnel, serve the normalized staging directory directly on the machine's Tailscale IP:
+
+```bash
+archive-recovery serve-site --runs-root runs --run-id my-first-run --tailscale --port 18082
+```
+
+This prints a URL such as `http://100.x.y.z:18082/`. It serves only `staging/normalized-site` for that run and does not expose the operator web UI, manifests, raw blobs, logs, or reports. `archive-recovery serve-site --tailscale` binds directly to this machine's Tailscale IP; it does not configure Tailscale Serve or Funnel. Tailscale Serve proxies a local service through Tailscale configuration; Funnel can expose publicly and should remain off unless separately approved.
+
+## Stage API Example
 
 Example API start request:
 
@@ -113,6 +136,8 @@ curl -X POST \
   -d '{"force": false, "csrf_token": "<token>"}' \
   http://127.0.0.1:18080/api/runs/my-first-run/stages/inventory
 ```
+
+Use the same endpoint for any ready stage, including `dependency-recovery`; API callers receive `202` when the background job is queued and can poll `/api/runs/<run_id>/status`, `/api/runs/<run_id>/events`, and `/api/runs/<run_id>/stages` for completion and output state.
 
 ## Events, Status, Artifact, And Object APIs
 

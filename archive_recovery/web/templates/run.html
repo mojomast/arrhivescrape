@@ -28,6 +28,7 @@
   {% set blocked = stages.values()|selectattr('reasons')|list %}
   {% if status.state == 'running' %}<div class="banner info">A stage is currently running. Other controls may be blocked by the stage lock until it finishes.</div>{% endif %}
   {% if blocked %}<div class="banner warning">Some stages are blocked. Review the annotated reasons below before starting later stages.</div>{% endif %}
+  <div class="banner info">Scoped runs may begin as capped smoke scrapes. Inventory covers the configured path prefix first; dependency and normalization reports reveal linked first-party URLs that still need recovery. Old-domain links usually mean unsupported link forms, out-of-scope content, or dependencies not yet recovered.</div>
   <h2>Stage Controls</h2>
   <p class="muted">One stage may run per run. Network stages use the same pipeline functions as the CLI and write progress to <code>logs/events.jsonl</code>.</p>
   <div class="stage-grid">
@@ -40,6 +41,7 @@
       <label>Resume key <input name="resume_key" placeholder="optional CDX resumeKey"></label>
       {% endif %}
       {% if stage == 'normalize' %}<div class="banner warning compact">Normalize rewrites and clears the staging output directory before regenerating files.</div>{% endif %}
+      {% if stage == 'dependency-recovery' %}<div class="banner warning compact">Appends first-party CDX rows from missing requests. Rerun select, download, dependencies, normalize, and validate afterward.</div>{% endif %}
       <small>{% if state.completed %}completed outputs: {{ state.outputs|join(', ') }}{% elif state.reasons %}blocked: {{ state.reasons|join('; ') }}{% else %}ready; requirements satisfied{% endif %}</small>
     </form>
     {% endfor %}

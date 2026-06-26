@@ -9,7 +9,7 @@ The current `archive_recovery` package now has the generic setup/interview comma
 - Generic target setup and run initialization with frozen run configs.
 - Shared config loading, run context/path handling, JSONL helpers, state helpers, Wayback/CDX access, URL normalization, MIME helpers, and content-addressed storage.
 - Migrated package stages for CDX inventory, capture selection, downloads, dependency discovery, static normalization, validation, and capture-browser generation.
-- CLI commands for `new`, `init`, `validate-config`, `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, `captures-browser`, and `web`.
+- CLI commands for `new`, `init`, `validate-config`, `inventory`, `select`, `download`, `dependencies`, `dependency-recovery`, `normalize`, `validate`, `captures-browser`, `serve-site`, and `web`.
 - Optional local web UI foundation with dashboard, browser target config creation, run initialization, run detail, stage readiness/gating, live events, status/stage/artifact/object APIs, a unified artifact/object library, noindex responses, CSRF/origin/auth guardrails, and sandboxed staging-site preview.
 
 ## Reuse Principle
@@ -52,7 +52,7 @@ Change only what prevents reuse:
 | Area | Status | Notes |
 | --- | --- | --- |
 | Optional dependencies | Complete | `web` extra installs Starlette, Jinja2, and uvicorn without making them core dependencies. |
-| CLI entry point | Complete | `archive-recovery web` serves the local dashboard with configurable runs root, default config, host, and port. |
+| CLI entry points | Complete | `archive-recovery web` serves the local dashboard. `archive-recovery serve-site` serves one normalized staging site directly over HTTP, including direct Tailscale-IP binding without Serve/Funnel. |
 | Local safety | Complete | Defaults to loopback, requires `--allow-nonlocal` plus auth for non-loopback binds, and applies Host, Origin/Referer, Fetch Metadata, CSRF, noindex, no-store, and CSP guardrails. |
 | Pages | Complete | Dashboard, targets, browser target creation, runs index with run initialization, run detail, artifact list, object library/viewer routes, events, metrics, readiness timeline, and staging-site preview. |
 | Stage runner | Complete | Starts one gated stage per run in-process, records status in `ops/status.json`, events in `logs/events.jsonl`, logs in `logs/<stage>.log`, and an active lock in `ops/stage-lock.json`. |
@@ -129,9 +129,11 @@ archive-recovery inventory --config configs/example.com.toml --run-id RUN_ID
 archive-recovery select --config configs/example.com.toml --run-id RUN_ID
 archive-recovery download --config configs/example.com.toml --run-id RUN_ID
 archive-recovery dependencies --config configs/example.com.toml --run-id RUN_ID
+archive-recovery dependency-recovery --config configs/example.com.toml --run-id RUN_ID
 archive-recovery normalize --config configs/example.com.toml --run-id RUN_ID
 archive-recovery validate --config configs/example.com.toml --run-id RUN_ID
 archive-recovery captures-browser --config configs/example.com.toml --run-id RUN_ID
+archive-recovery serve-site --runs-root runs --run-id RUN_ID --tailscale
 archive-recovery web --runs-root runs --config configs/example.com.toml
 archive-recovery promote --run-id RUN_ID
 archive-recovery serve --run-id RUN_ID
@@ -153,18 +155,19 @@ archive-recovery phpbb wire-archive --run-id RUN_ID
 9. Added the optional local web frontend foundation.
 10. Added the unified artifact/object library and safe object viewer modes for source, preview, download, and bytes access.
 11. Added web CSRF/origin/auth guardrails, object renderer depth, visible parity controls, staging preview isolation, and focused web/object/CLI tests.
+12. Added path-scoped target recovery and direct staging-site serving for private tailnet inspection without Tailscale Serve/Funnel.
+13. Added generic first-party dependency recovery from missing dependency requests and made normalization rewrite only recovered routes.
 
 ## Next Steps
 
-1. Expand focused tests for URL normalization, output path mapping, MIME classification, Wayback error detection, dependency extraction, link rewriting, validation, and publication gates beyond the initial web/object/CLI smoke suite.
-2. Decide whether the dependency inventory feedback pass should return as a generic package stage or remain folded into targeted iteration workflows.
-3. Add generic `promote` and `serve` commands with explicit validation/privacy gates before any public output path is written.
-4. Promote phpBB/forum repair scripts into plugins without hardcoded target paths.
-5. Add stage cancellation or pause/resume controls for the local web UI if long-running operator sessions need them.
-6. Add optional web controls for safe stage-specific parameters beyond inventory `force` and `resume_key` only when the CLI behavior is stable.
-7. Continue hardening authentication/session UX before considering any non-tailnet shared deployment of the operator UI.
-8. Expand object preview support only through conservative MIME/type allowlists; do not execute archived HTML or JavaScript in the viewer.
-9. Keep generated artifacts, raw data, logs, run directories, SQLite databases, and promoted site output ignored by git.
+1. Expand focused tests for URL normalization, output path mapping, MIME classification, Wayback error detection, validation, and publication gates beyond the initial web/object/CLI smoke suite.
+2. Add generic `promote` and `serve` commands with explicit validation/privacy gates before any public output path is written.
+3. Promote phpBB/forum repair scripts into plugins without hardcoded target paths.
+4. Add stage cancellation or pause/resume controls for the local web UI if long-running operator sessions need them.
+5. Add optional web controls for safe stage-specific parameters beyond inventory `force` and `resume_key` only when the CLI behavior is stable.
+6. Continue hardening authentication/session UX before considering any non-tailnet shared deployment of the operator UI.
+7. Expand object preview support only through conservative MIME/type allowlists; do not execute archived HTML or JavaScript in the viewer.
+8. Keep generated artifacts, raw data, logs, run directories, SQLite databases, and promoted site output ignored by git.
 
 ## Best-Practice Constraints
 

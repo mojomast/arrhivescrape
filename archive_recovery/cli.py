@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import functools
+import http.server
 import json
 import re
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +15,7 @@ from .context import create_run_context, initialize_run
 from .pipeline.captures_browser import run_captures_browser
 from .pipeline.dependencies import run_dependencies
 from .pipeline.download import run_download
-from .pipeline.inventory import run_inventory
+from .pipeline.inventory import run_dependency_recovery, run_inventory
 from .pipeline.normalization import run_normalize
 from .pipeline.selection import run_selection
 from .pipeline.validation import run_validate
@@ -30,6 +33,7 @@ SERVING_PREFERENCES = ("none", "caddy-local", "caddy-tailnet", "tailscale-serve"
 class InterviewConfig:
     domain: str
     aliases: list[str] = field(default_factory=list)
+    path_prefix: str = "/"
     target_mode: str = "latest-good"
     target_date: str = ""
     cdx_endpoint: str = "https://web.archive.org/cdx/search/cdx"
@@ -80,6 +84,10 @@ def split_hosts(value: str) -> list[str]:
     return hosts
 
 
+def default_alias_for(domain: str) -> str:
+    return domain.removeprefix("www.") if domain.startswith("www.") else f"www.{domain}"
+
+
 def ask(prompt: str, default: str = "") -> str:
     suffix = f" [{default}]" if default else ""
     answer = input(f"{prompt}{suffix}: ").strip()
@@ -112,10 +120,22 @@ def ask_float(prompt: str, default: float) -> float:
             print("Enter a number.")
 
 
-def build_config(args: argparse.Namespace, domain: str, aliases: list[str], target_mode: str, target_date: str, cdx_endpoint: str, cdx_filters: list[str], cdx_limit: int, cdx_min_interval_seconds: float, content_workers: int, content_timeout_seconds: int, third_party_mode: str, recover_third_party_hosts: list[str], publication_policy: str, serving_preference: str, bind_host: str, bind_port: int, public_hostname: str) -> InterviewConfig:
+def clean_path_prefix(value: str) -> str:
+    if not value.strip():
+        return "/"
+    cleaned = "/" + value.strip().strip("/")
+    if cleaned == "/":
+        return "/"
+    if any(part in {".", ".."} for part in cleaned.split("/")):
+        raise argparse.ArgumentTypeError(f"invalid path prefix: {value!r}")
+    return cleaned
+
+
+def build_config(args: argparse.Namespace, domain: str, aliases: list[str], path_prefix: str, target_mode: str, target_date: str, cdx_endpoint: str, cdx_filters: list[str], cdx_limit: int, cdx_min_interval_seconds: float, content_workers: int, content_timeout_seconds: int, third_party_mode: str, recover_third_party_hosts: list[str], publication_policy: str, serving_preference: str, bind_host: str, bind_port: int, public_hostname: str) -> InterviewConfig:
     return InterviewConfig(
         domain=domain,
         aliases=aliases,
+        path_prefix=path_prefix,
         target_mode=target_mode,
         target_date=target_date,
         cdx_endpoint=cdx_endpoint,
@@ -138,7 +158,8 @@ def build_config(args: argparse.Namespace, domain: str, aliases: list[str], targ
 
 def interactive_config(args: argparse.Namespace) -> InterviewConfig:
     domain = clean_host(args.domain) if args.domain else clean_host(ask("Canonical domain"))
-    aliases = split_hosts(ask("Alias hosts, comma-separated", f"www.{domain}"))
+    aliases = split_hosts(ask("Alias hosts, comma-separated", default_alias_for(domain)))
+    path_prefix = clean_path_prefix(ask("Path prefix to recover", "/"))
     target_mode = ask_choice("Target mode", TARGET_MODES, "latest-good")
     target_date = ask("Target date/timestamp or era notes") if target_mode in {"date-specific", "selected-eras"} else ""
     cdx_endpoint = ask("Wayback/CDX endpoint", "https://web.archive.org/cdx/search/cdx")
@@ -154,15 +175,15 @@ def interactive_config(args: argparse.Namespace) -> InterviewConfig:
     bind_host = ask("Local bind host", "127.0.0.1")
     bind_port = ask_int("Local bind port", 18080)
     public_hostname = ask("Public hostname") if publication_policy.startswith("public") or serving_preference in {"tailscale-funnel", "public-caddy"} else ""
-    return build_config(args, domain, aliases, target_mode, target_date, cdx_endpoint, cdx_filters, cdx_limit, cdx_min_interval_seconds, content_workers, content_timeout_seconds, third_party_mode, recover_third_party_hosts, publication_policy, serving_preference, bind_host, bind_port, public_hostname)
+    return build_config(args, domain, aliases, path_prefix, target_mode, target_date, cdx_endpoint, cdx_filters, cdx_limit, cdx_min_interval_seconds, content_workers, content_timeout_seconds, third_party_mode, recover_third_party_hosts, publication_policy, serving_preference, bind_host, bind_port, public_hostname)
 
 
 def non_interactive_config(args: argparse.Namespace) -> InterviewConfig:
     if not args.domain:
         raise SystemExit("--domain is required with --non-interactive")
     domain = clean_host(args.domain)
-    aliases = split_hosts(args.aliases or f"www.{domain}")
-    return build_config(args, domain, aliases, args.target_mode, args.target_date or "", "https://web.archive.org/cdx/search/cdx", ["statuscode:200"], 1000, 1.1, 4, 30, "audit-only", [], "private-tailnet", "caddy-local", "127.0.0.1", 18080, "")
+    aliases = split_hosts(args.aliases or default_alias_for(domain))
+    return build_config(args, domain, aliases, clean_path_prefix(args.path_prefix or "/"), args.target_mode, args.target_date or "", "https://web.archive.org/cdx/search/cdx", ["statuscode:200"], 1000, 1.1, 4, 30, "audit-only", [], "private-tailnet", "caddy-local", "127.0.0.1", 18080, "")
 
 
 def toml_string_list(values: list[str]) -> str:
@@ -181,7 +202,8 @@ name = {json.dumps(config.domain + " recovery")}
 domain = {json.dumps(config.domain)}
 canonical_host = {json.dumps(config.domain)}
 alias_hosts = {toml_string_list(config.aliases)}
-scope_mode = "domain"
+scope_mode = {json.dumps("prefix" if config.path_prefix != "/" else "domain")}
+path_prefix = {json.dumps(config.path_prefix)}
 
 [target]
 mode = {json.dumps(config.target_mode)}
@@ -189,7 +211,7 @@ target_date = {json.dumps(config.target_date)}
 
 [cdx]
 endpoint = {json.dumps(config.cdx_endpoint)}
-match_type = "domain"
+match_type = {json.dumps("prefix" if config.path_prefix != "/" else "domain")}
 filters = {toml_string_list(config.cdx_filters)}
 collapse = "digest"
 limit = {config.cdx_limit}
@@ -265,7 +287,7 @@ def scaffold_run(config: InterviewConfig, dry_run: bool = False) -> Path:
         run_config = {
             "run_id": run_id,
             "config_version": 1,
-            "scope": {"domain": config.domain, "alias_hosts": config.aliases, "scope_mode": "domain"},
+            "scope": {"domain": config.domain, "alias_hosts": config.aliases, "scope_mode": "prefix" if config.path_prefix != "/" else "domain", "path_prefix": config.path_prefix},
             "target_mode": config.target_mode,
             "paths": {
                 "run_dir": str(run_dir),
@@ -426,6 +448,29 @@ def command_dependencies(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_dependency_recovery(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_dependency_recovery(
+            context,
+            missing_path=Path(args.missing_requests) if args.missing_requests else None,
+            inventory_path=Path(args.inventory) if args.inventory else None,
+            report_path=Path(args.report_output) if args.report_output else None,
+        )
+    except (ConfigError, FileExistsError, RuntimeError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Requests considered: {result.requests_considered}")
+    print(f"CDX queries issued: {result.queries_issued}")
+    print(f"Records found: {result.records_found}")
+    print(f"Records appended: {result.records_appended}")
+    print(f"Inventory: {result.raw_path}")
+    print(f"CDX pages: {result.pages_dir}")
+    print(f"Report: {result.report_path}")
+    print("Next: rerun select, download, dependencies, normalize, and validate.")
+    return 0
+
+
 def command_normalize(args: argparse.Namespace) -> int:
     try:
         context = pipeline_context(args.config, args.run_id)
@@ -496,6 +541,31 @@ def command_captures_browser(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_serve_site(args: argparse.Namespace) -> int:
+    """Serve a normalized staging site directly; no Tailscale Serve/Funnel."""
+
+    site = Path(args.runs_root) / args.run_id / "staging" / "normalized-site"
+    if not site.is_dir():
+        raise SystemExit(f"staging site not found: {site}")
+    host = args.host
+    if args.tailscale:
+        try:
+            host = subprocess.check_output(["tailscale", "ip", "-4"], text=True).splitlines()[0].strip()
+        except (FileNotFoundError, IndexError, subprocess.CalledProcessError) as exc:
+            raise SystemExit("could not determine Tailscale IPv4 address") from exc
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
+    server = http.server.ThreadingHTTPServer((host, args.port), handler)
+    print(f"Serving {site}")
+    print(f"URL: http://{host}:{args.port}/")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped")
+    finally:
+        server.server_close()
+    return 0
+
+
 def command_web(args: argparse.Namespace) -> int:
     """Serve the optional local web UI when ASGI dependencies are installed."""
 
@@ -526,6 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
     new_parser = subparsers.add_parser("new", help="interactively create a recovery config and run scaffold")
     new_parser.add_argument("--domain", help="canonical domain for non-interactive or prefilled interactive setup")
     new_parser.add_argument("--aliases", help="comma-separated alias hosts for non-interactive setup")
+    new_parser.add_argument("--path-prefix", default="/", help="optional URL path prefix to recover, e.g. /blog")
     new_parser.add_argument("--target-mode", choices=TARGET_MODES, default="latest-good")
     new_parser.add_argument("--target-date", help="date, timestamp, or era notes for date-specific/selected-eras modes")
     new_parser.add_argument("--output", help="config path to write, default configs/<domain>.toml")
@@ -578,6 +649,14 @@ def build_parser() -> argparse.ArgumentParser:
     deps_parser.add_argument("--report-output", help="dependency report markdown path; defaults to run reports/dependency-report.md")
     deps_parser.set_defaults(func=command_dependencies)
 
+    dep_recovery_parser = subparsers.add_parser("dependency-recovery", help="fetch CDX inventory rows for missing first-party dependency requests")
+    dep_recovery_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    dep_recovery_parser.add_argument("--run-id", required=True, help="run id containing missing dependency requests")
+    dep_recovery_parser.add_argument("--missing-requests", help="missing dependency JSONL; defaults to run manifests/missing-dependency-requests.jsonl")
+    dep_recovery_parser.add_argument("--inventory", help="inventory JSONL to append; defaults to run manifests/inventory.raw.jsonl")
+    dep_recovery_parser.add_argument("--report-output", help="dependency recovery report markdown path; defaults to run reports/dependency-recovery-report.md")
+    dep_recovery_parser.set_defaults(func=command_dependency_recovery)
+
     normalize_parser = subparsers.add_parser("normalize", help="rewrite downloaded captures into a static staging site")
     normalize_parser.add_argument("--config", required=True, help="path to recovery TOML config")
     normalize_parser.add_argument("--run-id", required=True, help="run id containing download results")
@@ -608,6 +687,14 @@ def build_parser() -> argparse.ArgumentParser:
     browser_parser.add_argument("--site-manifest", help="site manifest JSONL; defaults to run manifests/site.manifest.jsonl")
     browser_parser.add_argument("--output-dir", help="output directory; defaults to run reports/captures-browser")
     browser_parser.set_defaults(func=command_captures_browser)
+
+    serve_site_parser = subparsers.add_parser("serve-site", help="serve a normalized staging site directly over HTTP")
+    serve_site_parser.add_argument("--runs-root", default="runs", help="runs directory containing the run; default: runs")
+    serve_site_parser.add_argument("--run-id", required=True, help="run id containing staging/normalized-site")
+    serve_site_parser.add_argument("--host", default="127.0.0.1", help="bind host; default: 127.0.0.1")
+    serve_site_parser.add_argument("--port", type=int, default=18082, help="bind port; default: 18082")
+    serve_site_parser.add_argument("--tailscale", action="store_true", help="bind to this machine's Tailscale IPv4 address without using Tailscale Serve or Funnel")
+    serve_site_parser.set_defaults(func=command_serve_site)
 
     web_parser = subparsers.add_parser("web", help="serve the optional local web dashboard")
     web_parser.add_argument("--runs-root", default="runs", help="runs directory to browse; default: runs")

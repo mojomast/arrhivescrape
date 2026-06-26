@@ -13,7 +13,7 @@ from archive_recovery.context import create_run_context
 from archive_recovery.pipeline.captures_browser import run_captures_browser
 from archive_recovery.pipeline.dependencies import run_dependencies
 from archive_recovery.pipeline.download import run_download
-from archive_recovery.pipeline.inventory import run_inventory
+from archive_recovery.pipeline.inventory import run_dependency_recovery, run_inventory
 from archive_recovery.pipeline.normalization import run_normalize
 from archive_recovery.pipeline.selection import run_selection
 from archive_recovery.pipeline.validation import run_validate
@@ -30,6 +30,7 @@ STAGES: dict[str, StageFunc] = {
     "select": run_selection,
     "download": run_download,
     "dependencies": run_dependencies,
+    "dependency-recovery": run_dependency_recovery,
     "normalize": run_normalize,
     "validate": run_validate,
     "captures-browser": run_captures_browser,
