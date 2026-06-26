@@ -95,6 +95,19 @@ def test_forwarded_origin_requires_allowed_host(sample_workspace):
     assert response.text == "Origin not allowed"
 
 
+def test_allowed_origin_host_accepts_browser_port_variants(sample_workspace):
+    from starlette.testclient import TestClient
+
+    from archive_recovery.web import create_app
+
+    client = TestClient(create_app(runs_root=sample_workspace["runs"], allowed_hosts=["100.72.41.9", "ussy.tailec998.ts.net"]), base_url="http://100.72.41.9:18080")
+    token = csrf(client)
+    cases = ["http://100.72.41.9", "http://ussy.tailec998.ts.net:18080", "https://ussy.tailec998.ts.net"]
+    for origin in cases:
+        response = client.post("/api/config/validate", json={"domain": "example.com", "csrf_token": token}, headers={"X-CSRF-Token": token, "Origin": origin})
+        assert response.status_code == 200
+
+
 def test_unsafe_routes_accept_forwarded_tailscale_origin(sample_workspace):
     import json
 

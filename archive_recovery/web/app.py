@@ -90,6 +90,8 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         for scheme, candidate_host, candidate_port in candidates:
             if parsed.scheme == scheme and origin_host == candidate_host and origin_port == candidate_port:
                 return True
+        if parsed.scheme in {"http", "https"} and origin_host in host_allowlist:
+            return True
         return False
 
     def bearer_authenticated(request: Any) -> bool:
