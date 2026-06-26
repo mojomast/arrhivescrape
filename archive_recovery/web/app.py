@@ -9,6 +9,7 @@ from archive_recovery.config import ConfigError, load_config
 
 from .fs import ARTIFACT_DIRS, iter_artifacts, list_runs, read_events, run_status, safe_child, safe_run_dir
 from .jobs import JobManager, STAGES
+from .workflow import defaults_payload, initialize_run_from_config, interview_from_payload, list_target_configs, render_and_validate, request_payload, run_details, stage_readiness, write_config_from_payload
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 
@@ -42,16 +43,12 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         return render(request, "dashboard.html", {"request": request, "runs": runs, "config_path": config_path, "runs_root": root})
 
     async def runs_page(request: Any) -> HTMLResponse:
-        return render(request, "runs.html", {"request": request, "runs": list_runs(root)})
+        runs = list_runs(root)
+        run_cards = [{"summary": run, "stages": stage_readiness(run.run_dir, STAGES)} for run in runs]
+        return render(request, "runs.html", {"request": request, "runs": runs, "run_cards": run_cards, "targets": list_target_configs()})
 
     async def targets_page(request: Any) -> HTMLResponse:
-        targets: list[dict[str, Any]] = []
-        for path in sorted(Path("configs").glob("*.toml")):
-            try:
-                config = load_config(path)
-                targets.append({"path": path, "valid": True, "domain": config.domain, "aliases": config.alias_hosts, "target_mode": config.target_mode, "error": ""})
-            except ConfigError as exc:
-                targets.append({"path": path, "valid": False, "domain": path.stem, "aliases": (), "target_mode": "", "error": str(exc)})
+        targets = list_target_configs()
         return render(request, "targets.html", {"request": request, "targets": targets})
 
     async def target_new_page(request: Any) -> HTMLResponse:
@@ -63,7 +60,7 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         return render(
             request,
             "run.html",
-            {"request": request, "run_id": run_id, "status": run_status(run_dir), "artifacts": iter_artifacts(run_dir), "events": read_events(run_dir), "stages": STAGES},
+            {"request": request, "run_id": run_id, "status": run_status(run_dir), "artifacts": iter_artifacts(run_dir), "events": read_events(run_dir), "stages": stage_readiness(run_dir, STAGES)},
         )
 
     async def api_status(request: Any) -> JSONResponse:
@@ -72,6 +69,61 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
     async def api_run_status(request: Any) -> JSONResponse:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
         return JSONResponse(run_status(run_dir))
+
+    async def api_configs(request: Any) -> JSONResponse:
+        return JSONResponse({"configs": list_target_configs()})
+
+    async def api_config_defaults(request: Any) -> JSONResponse:
+        return JSONResponse(defaults_payload())
+
+    async def api_config_validate(request: Any) -> JSONResponse:
+        try:
+            payload = await request_payload(request)
+            if payload.get("config_path"):
+                config = load_config(payload["config_path"])
+                return JSONResponse({"valid": True, "config": {"path": str(config.path), "domain": config.domain, "target_mode": config.target_mode, "runs_root": str(config.runs_root)}})
+            toml = render_and_validate(interview_from_payload(payload))
+            return JSONResponse({"valid": True, "toml": toml})
+        except Exception as exc:  # noqa: BLE001 - validation endpoint returns form errors.
+            return JSONResponse({"valid": False, "error": str(exc)}, status_code=400)
+
+    async def api_create_config(request: Any) -> JSONResponse:
+        try:
+            result = write_config_from_payload(await request_payload(request))
+        except Exception as exc:  # noqa: BLE001 - surface browser form errors.
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        return JSONResponse(result, status_code=201)
+
+    async def api_create_run(request: Any) -> JSONResponse:
+        try:
+            payload = await request_payload(request)
+            result = initialize_run_from_config(payload.get("config_path") or config_path or "", root, run_id=payload.get("run_id") or None, force=str(payload.get("force", "")).lower() in {"1", "true", "yes", "on"})
+        except Exception as exc:  # noqa: BLE001 - surface browser form errors.
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        return JSONResponse(result, status_code=201)
+
+    async def api_run_detail(request: Any) -> JSONResponse:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        return JSONResponse(run_details(run_dir, run_status(run_dir), iter_artifacts(run_dir), STAGES))
+
+    async def api_run_stages(request: Any) -> JSONResponse:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        return JSONResponse({"run_id": run_dir.name, "stages": stage_readiness(run_dir, STAGES)})
+
+    async def create_target_form(request: Any) -> Response:
+        try:
+            result = write_config_from_payload(await request_payload(request))
+        except Exception as exc:  # noqa: BLE001 - return form-friendly errors.
+            return PlainTextResponse(str(exc), status_code=409)
+        return RedirectResponse(f"/targets?created={result['path']}", status_code=303)
+
+    async def create_run_form(request: Any) -> Response:
+        try:
+            payload = await request_payload(request)
+            result = initialize_run_from_config(payload.get("config_path") or config_path or "", root, run_id=payload.get("run_id") or None, force=str(payload.get("force", "")).lower() in {"1", "true", "yes", "on"})
+        except Exception as exc:  # noqa: BLE001 - return form-friendly errors.
+            return PlainTextResponse(str(exc), status_code=409)
+        return RedirectResponse(f"/runs/{result['run_id']}", status_code=303)
 
     async def api_events(request: Any) -> JSONResponse:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
@@ -100,8 +152,8 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
 
     async def start_stage(request: Any) -> Response:
         payload: dict[str, Any] = {}
-        if request.headers.get("content-type", "").startswith("application/json"):
-            payload = await request.json()
+        if request.headers.get("content-type", ""):
+            payload = await request_payload(request)
         try:
             result = jobs.start(request.path_params["run_id"], request.path_params["stage"], config_path=payload.get("config_path"), options=payload)
         except (ConfigError, FileNotFoundError, RuntimeError, ValueError) as exc:
@@ -112,43 +164,61 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         return JSONResponse(result, status_code=202)
 
     async def artifact_file(request: Any) -> Response:
-        run_dir = safe_run_dir(root, request.path_params["run_id"])
-        requested = request.path_params.get("path", "")
-        if requested.split("/", 1)[0] not in ARTIFACT_DIRS:
-            return PlainTextResponse("artifact path not allowed", status_code=403)
-        path = safe_child(run_dir, requested)
+        try:
+            run_dir = safe_run_dir(root, request.path_params["run_id"])
+            requested = request.path_params.get("path", "")
+            if requested.split("/", 1)[0] not in ARTIFACT_DIRS:
+                return PlainTextResponse("artifact path not allowed", status_code=403)
+            path = safe_child(run_dir, requested)
+        except ValueError as exc:
+            return PlainTextResponse(str(exc), status_code=403)
         if not path.is_file():
             return PlainTextResponse("not found", status_code=404)
         return FileResponse(path)
 
     async def report_file(request: Any) -> Response:
-        run_dir = safe_run_dir(root, request.path_params["run_id"])
-        path = safe_child(run_dir / "reports", request.path_params.get("path", ""))
+        try:
+            run_dir = safe_run_dir(root, request.path_params["run_id"])
+            path = safe_child(run_dir / "reports", request.path_params.get("path", ""))
+        except ValueError as exc:
+            return PlainTextResponse(str(exc), status_code=403)
         if not path.is_file():
             return PlainTextResponse("not found", status_code=404)
         return FileResponse(path)
 
     async def site_file(request: Any) -> Response:
-        run_dir = safe_run_dir(root, request.path_params["run_id"])
-        site = run_dir / "staging" / "normalized-site"
-        if not site.is_dir():
-            return PlainTextResponse("staging site not found", status_code=404)
-        requested = request.path_params.get("path", "") or "index.html"
-        path = safe_child(site, requested)
-        if path.is_dir():
-            path = safe_child(path, "index.html")
+        try:
+            run_dir = safe_run_dir(root, request.path_params["run_id"])
+            site = run_dir / "staging" / "normalized-site"
+            if not site.is_dir():
+                return PlainTextResponse("staging site not found", status_code=404)
+            requested = request.path_params.get("path", "") or "index.html"
+            path = safe_child(site, requested)
+            if path.is_dir():
+                path = safe_child(path, "index.html")
+        except ValueError as exc:
+            return PlainTextResponse(str(exc), status_code=403)
         if not path.is_file():
             return PlainTextResponse("not found", status_code=404)
-        return FileResponse(path)
+        return FileResponse(path, headers={"X-Robots-Tag": "noindex, noarchive"})
 
     routes = [
         Route("/", dashboard),
         Route("/targets", targets_page),
+        Route("/targets", create_target_form, methods=["POST"]),
         Route("/targets/new", target_new_page),
         Route("/runs", runs_page),
+        Route("/runs", create_run_form, methods=["POST"]),
         Route("/runs/{run_id}", run_page),
         Route("/api/status", api_status),
+        Route("/api/configs", api_configs),
+        Route("/api/config/defaults", api_config_defaults),
+        Route("/api/config/validate", api_config_validate, methods=["POST"]),
+        Route("/api/configs", api_create_config, methods=["POST"]),
+        Route("/api/runs", api_create_run, methods=["POST"]),
+        Route("/api/runs/{run_id}", api_run_detail),
         Route("/api/runs/{run_id}/status", api_run_status),
+        Route("/api/runs/{run_id}/stages", api_run_stages),
         Route("/api/runs/{run_id}/events", api_events),
         Route("/api/runs/{run_id}/events/stream", event_stream),
         Route("/api/runs/{run_id}/artifacts", api_artifacts),
@@ -159,4 +229,12 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         Route("/runs/{run_id}/site/{path:path}", site_file),
         Mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static"),
     ]
-    return Starlette(debug=False, routes=routes)
+    app = Starlette(debug=False, routes=routes)
+
+    @app.middleware("http")
+    async def noindex_headers(request: Any, call_next: Any) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Robots-Tag", "noindex, noarchive")
+        return response
+
+    return app

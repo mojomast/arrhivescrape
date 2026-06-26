@@ -63,7 +63,7 @@ The same commands are available through the installed script as `archive-recover
 
 ## Local Web UI
 
-The optional web UI is a local operator console for existing run directories. It lists targets and runs, starts one pipeline stage at a time for a run, streams progress events, exposes status JSON, links generated artifacts, and serves the normalized staging site from `runs/<run_id>/staging/normalized-site/` for inspection.
+The optional web UI is a local operator console for the full run workflow. It can list and create target configs under `configs/`, initialize runs with frozen `run-config.json` files, gate stage controls until their required manifests exist, stream progress events, expose status/stage/artifact APIs, and serve the normalized staging site from `runs/<run_id>/staging/normalized-site/` for inspection.
 
 Start it from the repo root after installing the `web` extra:
 
@@ -78,13 +78,16 @@ For tailnet-only access, bind to a Tailscale IP with `--allow-nonlocal` or use `
 Key local endpoints:
 
 - `GET /` shows the dashboard.
-- `GET /targets` lists `configs/*.toml` target configs.
-- `GET /runs` and `GET /runs/<run_id>` show run status, metrics, events, stage controls, and artifacts.
-- `POST /api/runs/<run_id>/stages/<stage>` starts `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, or `captures-browser`.
-- `GET /api/status`, `/api/runs/<run_id>/status`, `/api/runs/<run_id>/events`, and `/api/runs/<run_id>/artifacts` provide machine-readable run state.
-- `GET /runs/<run_id>/site/` previews the normalized staging site.
+- `GET /targets` lists `configs/*.toml` target configs, and `GET /targets/new` provides a browser form for conservative config creation.
+- `POST /targets` or `POST /api/configs` writes a validated target config under `configs/`; `GET /api/configs`, `GET /api/config/defaults`, and `POST /api/config/validate` support browser and scripted config flows.
+- `GET /runs` and `GET /runs/<run_id>` show run status, metrics, events, stage readiness, gated stage controls, and artifacts.
+- `POST /runs` or `POST /api/runs` initializes a run from a config and freezes the normalized run config.
+- `GET /api/runs/<run_id>/stages` returns readiness, requirements, outputs, completed state, blockers, and `ready` flags for each stage.
+- `POST /api/runs/<run_id>/stages/<stage>` starts `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, or `captures-browser` when the run is ready for that stage.
+- `GET /api/status`, `/api/runs/<run_id>`, `/api/runs/<run_id>/status`, `/api/runs/<run_id>/events`, `/api/runs/<run_id>/events/stream`, and `/api/runs/<run_id>/artifacts` provide machine-readable run state, event streams, and artifact listings.
+- `GET /runs/<run_id>/site/` previews the normalized staging site with `X-Robots-Tag: noindex, noarchive` headers.
 
-See [`docs/web-ui.md`](docs/web-ui.md) for operating details, safety guardrails, API notes, and troubleshooting.
+All web responses default to `X-Robots-Tag: noindex, noarchive`; this is a safety belt for accidental exposure, not permission to publish run data. See [`docs/web-ui.md`](docs/web-ui.md) for operating details, safety guardrails, API notes, and troubleshooting.
 
 The tracked suite is now built around migrated generic package modules for the main recovery pipeline, with optional local web operation layered on top. See [`docs/tooling-roadmap.md`](docs/tooling-roadmap.md) for completed work and next steps.
 

@@ -8,5 +8,43 @@
   </div>
   <a class="button secondary" href="/api/status">JSON status</a>
 </div>
+<section class="panel">
+  <h2>Initialize a run</h2>
+  <p class="muted">Choose a valid target config or paste a config path. The run stores a frozen config copy before any stages are started.</p>
+  <form method="post" action="/runs" class="form-grid">
+    <label>Config path
+      <input required name="config_path" list="target-configs" placeholder="configs/example.com.toml">
+      <datalist id="target-configs">{% for target in targets if target.valid %}<option value="{{ target.path }}">{{ target.domain }}</option>{% endfor %}</datalist>
+      <small>Must use the same runs root as this UI.</small>
+    </label>
+    <label>Run id (optional) <input name="run_id" placeholder="auto timestamp"><small>Leave empty for an automatic id.</small></label>
+    <label class="check-row"><input type="checkbox" name="force" value="true"> overwrite existing run config</label>
+    <button class="button" type="submit">Create run</button>
+  </form>
+</section>
 {% include "runs_table.html" %}
+
+<section class="panel">
+  <div class="section-head compact"><h2>Stage readiness by run</h2><span class="muted">Completed outputs and blocked reasons</span></div>
+  <div class="run-readiness-list">
+    {% for card in run_cards %}
+    {% set run = card.summary %}
+    <article class="run-card">
+      <div class="run-card-head">
+        <a href="/runs/{{ run.run_id }}"><code>{{ run.run_id }}</code></a>
+        <span class="chip {{ run.status.state }}">{{ run.status.state }}</span>
+        <span class="muted">{{ run.domain or 'unknown domain' }}</span>
+      </div>
+      <ol class="timeline compact-timeline">
+        {% for stage, state in card.stages.items() %}
+        <li class="{% if state.completed %}done{% elif state.ready %}ready{% else %}blocked{% endif %}">
+          <span class="dot"></span>
+          <div><strong>{{ stage }}</strong>{% if state.completed %}<small>outputs: {{ state.outputs|join(', ') }}</small>{% elif state.reasons %}<small>{{ state.reasons|join('; ') }}</small>{% else %}<small>ready to start</small>{% endif %}</div>
+        </li>
+        {% endfor %}
+      </ol>
+    </article>
+    {% else %}<p class="empty">Create a run to see stage readiness.</p>{% endfor %}
+  </div>
+</section>
 {% endblock %}

@@ -6,13 +6,14 @@
     <p class="eyebrow">Target Configs</p>
     <h1>Targets</h1>
   </div>
-  <a class="button" href="/targets/new">New target guide</a>
+  <a class="button" href="/targets/new">New target</a>
 </div>
 
 <section class="panel">
+  <p class="lede">Tracked target configs live under <code>configs/*.toml</code>. Valid configs can initialize a run directly; invalid configs stay visible with their validation error.</p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Config</th><th>Domain</th><th>Mode</th><th>Aliases</th><th>Status</th><th>Next command</th></tr></thead>
+      <thead><tr><th>Config</th><th>Domain</th><th>Mode</th><th>Aliases</th><th>Runs root</th><th>Status</th><th>Initialize run</th></tr></thead>
       <tbody>
         {% for target in targets %}
         <tr>
@@ -20,11 +21,21 @@
           <td>{{ target.domain }}</td>
           <td>{{ target.target_mode or 'unknown' }}</td>
           <td>{{ target.aliases|join(', ') }}</td>
+          <td><code>{{ target.runs_root or 'unknown' }}</code></td>
           <td>{% if target.valid %}<span class="chip succeeded">valid</span>{% else %}<span class="chip failed">invalid</span><br><small>{{ target.error }}</small>{% endif %}</td>
-          <td><code>archive-recovery init --config {{ target.path }} --run-id my-run</code></td>
+          <td>
+            {% if target.valid %}
+            <form method="post" action="/runs" class="inline-form">
+              <input type="hidden" name="config_path" value="{{ target.path }}">
+              <label class="sr-only" for="run-id-{{ loop.index }}">Optional run id</label>
+              <input id="run-id-{{ loop.index }}" name="run_id" placeholder="run id (optional)">
+              <button class="button secondary" type="submit">Create run</button>
+            </form>
+            {% else %}<span class="muted">Fix config first</span>{% endif %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="empty">No tracked config files found under <code>configs/*.toml</code>.</td></tr>
+        <tr><td colspan="7" class="empty">No tracked config files found under <code>configs/*.toml</code>. Create one from the browser form.</td></tr>
         {% endfor %}
       </tbody>
     </table>

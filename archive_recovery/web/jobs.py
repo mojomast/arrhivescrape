@@ -19,6 +19,7 @@ from archive_recovery.pipeline.selection import run_selection
 from archive_recovery.pipeline.validation import run_validate
 
 from .fs import config_path_for_run, safe_run_dir, utc_now
+from .workflow import ensure_runs_root_matches, stage_readiness
 
 
 StageFunc = Callable[..., Any]
@@ -51,16 +52,35 @@ class JobManager:
         actual_config = str(config_path or config_path_for_run(run_dir) or self.default_config or "")
         if not actual_config:
             raise ConfigError("config path is required for this run")
+        config = load_config(actual_config)
+        ensure_runs_root_matches(config, self.runs_root)
+        readiness = stage_readiness(run_dir, STAGES)
+        stage_state = readiness.get(stage, {})
+        if stage != "inventory" and not stage_state.get("ready", False):
+            reasons = stage_state.get("reasons") or ["stage requirements are not satisfied"]
+            raise RuntimeError(f"stage {stage} is not ready: {'; '.join(reasons)}")
+        lock_path = run_dir / "ops" / "stage-lock.json"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_payload = {"run_id": run_id, "stage": stage, "created_at": utc_now(), "config_path": actual_config}
         with self._lock:
             existing = self._active.get(run_id)
             if existing and existing.is_alive():
                 raise RuntimeError(f"another stage is already running for run: {run_id}")
-            thread = threading.Thread(target=self._run_stage, args=(run_id, stage, actual_config, options or {}), name=f"{run_id}:{stage}", daemon=True)
+            try:
+                with lock_path.open("x", encoding="utf-8") as handle:
+                    handle.write(json.dumps(lock_payload, indent=2, sort_keys=True) + "\n")
+            except FileExistsError as exc:
+                raise RuntimeError(f"stage lock exists for run: {run_id} ({lock_path})") from exc
+            thread = threading.Thread(target=self._run_stage, args=(run_id, stage, actual_config, options or {}, lock_path), name=f"{run_id}:{stage}", daemon=True)
             self._active[run_id] = thread
-            thread.start()
+            try:
+                thread.start()
+            except Exception:
+                lock_path.unlink(missing_ok=True)
+                raise
         return {"run_id": run_id, "stage": stage, "state": "queued", "config_path": actual_config}
 
-    def _run_stage(self, run_id: str, stage: str, config_path: str, options: dict[str, Any]) -> None:
+    def _run_stage(self, run_id: str, stage: str, config_path: str, options: dict[str, Any], lock_path: Path) -> None:
         run_dir = safe_run_dir(self.runs_root, run_id)
         (run_dir / "logs").mkdir(parents=True, exist_ok=True)
         (run_dir / "ops").mkdir(parents=True, exist_ok=True)
@@ -84,6 +104,8 @@ class JobManager:
                 traceback.print_exc(file=log)
             self._write_status(run_dir, stage=stage, state="failed", finished_at=utc_now(), config_path=config_path, run_id=run_id, error=str(exc))
             self._event(run_dir, "error", "stage_failed", f"Failed {stage}: {exc}", {"stage": stage, "error": str(exc)})
+        finally:
+            lock_path.unlink(missing_ok=True)
 
     def _stage_kwargs(self, stage: str, options: dict[str, Any]) -> dict[str, Any]:
         # Keep the web runner intentionally conservative: expose only simple

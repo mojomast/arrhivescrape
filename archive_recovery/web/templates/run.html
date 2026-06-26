@@ -7,7 +7,10 @@
     <h1><code>{{ run_id }}</code></h1>
   </div>
   <div class="actions">
-    <a class="button secondary" href="/api/runs/{{ run_id }}/status">Status JSON</a>
+    <a class="button secondary" href="/runs/{{ run_id }}/site/">Open site</a>
+    <a class="button secondary" href="/runs/{{ run_id }}/reports/captures-browser/index.html">Capture browser</a>
+    <a class="button secondary" href="/api/runs/{{ run_id }}">Run JSON</a>
+    <a class="button secondary" href="/api/runs/{{ run_id }}/stages">Stages JSON</a>
     <a class="button secondary" href="/api/runs/{{ run_id }}/artifacts">Artifacts JSON</a>
   </div>
 </div>
@@ -20,20 +23,43 @@
 </section>
 
 <section class="panel">
+  {% set blocked = stages.values()|selectattr('reasons')|list %}
+  {% if status.state == 'running' %}<div class="banner info">A stage is currently running. Other controls may be blocked by the stage lock until it finishes.</div>{% endif %}
+  {% if blocked %}<div class="banner warning">Some stages are blocked. Review the annotated reasons below before starting later stages.</div>{% endif %}
   <h2>Stage Controls</h2>
   <p class="muted">One stage may run per run. Network stages use the same pipeline functions as the CLI and write progress to <code>logs/events.jsonl</code>.</p>
   <div class="stage-grid">
-    {% for stage in stages %}
-    <form method="post" action="/api/runs/{{ run_id }}/stages/{{ stage }}">
-      <button class="stage-button" type="submit">{{ stage }}</button>
+    {% for stage, state in stages.items() %}
+    <form method="post" action="/api/runs/{{ run_id }}/stages/{{ stage }}" class="stage-card {% if state.completed %}done{% elif state.ready %}ready{% else %}blocked{% endif %}">
+      <button class="stage-button" type="submit" {% if not state.ready %}disabled aria-disabled="true" title="{{ state.reasons|join('; ') }}"{% endif %}>{{ stage }}{% if state.completed %} ✓{% endif %}</button>
+      <small>{% if state.completed %}completed outputs: {{ state.outputs|join(', ') }}{% elif state.reasons %}blocked: {{ state.reasons|join('; ') }}{% else %}ready; requirements satisfied{% endif %}</small>
     </form>
     {% endfor %}
   </div>
 </section>
 
+<section class="panel">
+  <div class="section-head compact"><h2>Readiness Timeline</h2><span class="muted">Inputs, outputs, and blockers</span></div>
+  <ol class="timeline">
+    {% for stage, state in stages.items() %}
+    <li class="{% if state.completed %}done{% elif state.ready %}ready{% else %}blocked{% endif %}">
+      <span class="dot"></span>
+      <div>
+        <strong>{{ stage }}</strong>
+        <dl>
+          <div><dt>Requires</dt><dd>{{ state.requirements|join(', ') if state.requirements else 'frozen run config only' }}</dd></div>
+          <div><dt>Outputs</dt><dd>{{ state.outputs|join(', ') }}</dd></div>
+          <div><dt>Status</dt><dd>{% if state.completed %}complete{% elif state.ready %}ready{% else %}blocked: {{ state.reasons|join('; ') }}{% endif %}</dd></div>
+        </dl>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+
 <section class="grid two">
   <article class="panel">
-    <div class="section-head compact"><h2>Live Events</h2><a href="/api/runs/{{ run_id }}/events">JSON</a></div>
+    <div class="section-head compact"><h2>Live Events</h2><span class="sse-status" data-sse-status>connecting</span><a href="/api/runs/{{ run_id }}/events">JSON</a></div>
     <ol class="events" data-events-url="/api/runs/{{ run_id }}/events/stream">
       {% for event in events %}
       <li><time>{{ event.created_at }}</time><span class="level {{ event.level }}">{{ event.level }}</span>{{ event.message }}</li>
@@ -53,7 +79,7 @@
 </section>
 
 <section class="panel">
-  <div class="section-head compact"><h2>Artifacts</h2><a href="/runs/{{ run_id }}/site/">Open staging site</a></div>
+  <div class="section-head compact"><h2>Artifacts</h2><div class="actions"><a href="/runs/{{ run_id }}/site/">Open staging site</a><a href="/runs/{{ run_id }}/reports/captures-browser/index.html">Open capture browser</a></div></div>
   <div class="artifact-list">
     {% for artifact in artifacts %}
     <a class="artifact" href="/runs/{{ run_id }}/artifacts/{{ artifact.path }}">

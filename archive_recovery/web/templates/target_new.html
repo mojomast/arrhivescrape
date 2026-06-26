@@ -10,12 +10,64 @@
 </div>
 
 <section class="panel">
-  <p>The web UI keeps config creation conservative: use the existing CLI interview so the generated TOML stays compatible with every pipeline stage.</p>
-  <div class="command-card"><code>archive-recovery new</code></div>
-  <p>For scripted defaults:</p>
-  <div class="command-card"><code>archive-recovery new --domain example.com --non-interactive</code></div>
-  <p>Then initialize a run and return to this UI:</p>
-  <div class="command-card"><code>archive-recovery init --config configs/example.com.toml --run-id my-first-run</code></div>
+  <p class="lede">Create a conservative browser-safe config using the same TOML renderer and validation as <code>archive-recovery new</code>. Defaults favor private local recovery, polite archive access, and audit-only third-party handling.</p>
+  <form method="post" action="/targets" class="config-form">
+    <fieldset>
+      <legend>Target identity</legend>
+      <div class="form-grid">
+        <label>Canonical domain <input required name="domain" inputmode="url" autocomplete="off" placeholder="example.com"><small>The original site host, without scheme or path.</small></label>
+        <label>Alias hosts <input name="aliases" placeholder="www.example.com"><small>Comma-separated hosts that should map to the same recovered site.</small></label>
+        <label>Config filename <input name="config_name" placeholder="example.com.toml"><small>Optional simple filename under <code>configs/</code>.</small></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Capture selection</legend>
+      <div class="form-grid">
+        <label>Target mode
+          <select name="target_mode">
+            <option value="latest-good">latest-good — conservative default</option><option value="date-specific">date-specific</option><option value="full-captures">full-captures</option><option value="selected-eras">selected-eras</option>
+          </select><small>Start broad only when you know the archive volume is manageable.</small>
+        </label>
+        <label>Target date or era <input name="target_date" placeholder="optional, e.g. 2020-05"><small>Used by date-specific or era-based recovery.</small></label>
+        <label>CDX limit <input name="cdx_limit" type="number" min="1" max="100000" value="1000"><small>Safe starting cap for inventory requests.</small></label>
+        <label>Minimum CDX interval <input name="cdx_min_interval_seconds" type="number" min="0" step="0.1" value="1.1"><small>Seconds between archive queries.</small></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Download and dependencies</legend>
+      <div class="form-grid">
+        <label>Content workers <input name="content_workers" type="number" min="1" max="16" value="4"><small>Keep modest to avoid stressing remote services.</small></label>
+        <label>Content timeout <input name="content_timeout_seconds" type="number" min="5" max="300" value="30"><small>Seconds per capture fetch.</small></label>
+        <label>Third-party mode
+          <select name="third_party_mode"><option value="audit-only">audit-only — safest</option><option value="off">off</option><option value="recover-capped">recover-capped</option><option value="recover-full-with-approval">recover-full-with-approval</option></select><small>Audit first; recover external assets only after review.</small>
+        </label>
+        <label>Allowed third-party hosts <input name="recover_third_party_hosts" placeholder="cdn.example.net, assets.example.org"><small>Only used for recovery modes, ignored for audit-only/off.</small></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Paths and serving</legend>
+      <div class="form-grid">
+        <label>Runs root <input name="runs_root" value="runs"><small>Must match the web UI runs root when creating runs here.</small></label>
+        <label>Recovered root <input name="recovered_root" placeholder="recovered/example.com"><small>Leave blank to derive from the domain.</small></label>
+        <label>Publication policy
+          <select name="publication_policy"><option value="private-tailnet">private-tailnet — default</option><option value="private-local">private-local</option><option value="public-noindex">public-noindex</option><option value="public-indexable">public-indexable</option></select><small>Public options should remain gated by validation and review.</small>
+        </label>
+        <label>Serving preference
+          <select name="serving_preference"><option value="caddy-local">caddy-local — loopback</option><option value="none">none</option><option value="caddy-tailnet">caddy-tailnet</option><option value="tailscale-serve">tailscale-serve</option><option value="tailscale-funnel">tailscale-funnel</option><option value="public-caddy">public-caddy</option></select><small>Local serving avoids accidental publication.</small>
+        </label>
+        <label>Bind host <input name="bind_host" value="127.0.0.1"><small>Loopback by default.</small></label>
+        <label>Bind port <input name="bind_port" type="number" min="1" max="65535" value="18080"><small>Local preview port.</small></label>
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <label class="check-row"><input type="checkbox" name="force" value="true"> overwrite existing config</label>
+      <button class="button" type="submit">Create target config</button>
+    </div>
+  </form>
 </section>
 
 <section class="panel warning">

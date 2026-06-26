@@ -9,6 +9,7 @@
         <th>Stage</th>
         <th>Publication</th>
         <th>Artifacts</th>
+        <th>Links</th>
         <th>Updated</th>
       </tr>
     </thead>
@@ -22,10 +23,11 @@
         <td>{{ run.status.stage or 'none' }}</td>
         <td>{{ run.publication_intent }}</td>
         <td>{{ run.artifact_count }}</td>
+        <td><a href="/runs/{{ run.run_id }}/site/">site</a> · <a href="/runs/{{ run.run_id }}/reports/captures-browser/index.html">captures</a></td>
         <td><time>{{ run.updated_at }}</time></td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="empty">No runs found. Initialize a run with <code>archive-recovery init --config configs/example.com.toml --run-id my-first-run</code>.</td></tr>
+      <tr><td colspan="9" class="empty">No runs found. Initialize a run with <code>archive-recovery init --config configs/example.com.toml --run-id my-first-run</code>.</td></tr>
       {% endfor %}
     </tbody>
   </table>
