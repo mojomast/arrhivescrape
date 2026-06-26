@@ -2,7 +2,7 @@
 
 This project is becoming a complete Wayback/static-site recovery suite by reusing the working recovery scripts that already succeeded, not by reinventing the pipeline from scratch.
 
-The current `archive_recovery` package now has the generic setup/interview command, run initialization, migrated core pipeline stages, report generation, and an optional local web frontend foundation. Remaining work should keep promoting proven behavior into reusable package modules, remove target-specific assumptions from core, and preserve the same staged workflow.
+The current `archive_recovery` package now has the generic setup/interview command, run initialization, migrated core pipeline stages, report generation, and an optional local web frontend with a unified artifact/object viewer. Remaining work should keep promoting proven behavior into reusable package modules, remove target-specific assumptions from core, and preserve the same staged workflow.
 
 ## Completed Foundation
 
@@ -10,7 +10,7 @@ The current `archive_recovery` package now has the generic setup/interview comma
 - Shared config loading, run context/path handling, JSONL helpers, state helpers, Wayback/CDX access, URL normalization, MIME helpers, and content-addressed storage.
 - Migrated package stages for CDX inventory, capture selection, downloads, dependency discovery, static normalization, validation, and capture-browser generation.
 - CLI commands for `new`, `init`, `validate-config`, `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, `captures-browser`, and `web`.
-- Optional local web UI foundation with dashboard, browser target config creation, run initialization, run detail, stage readiness/gating, live events, status/stage/artifact APIs, noindex responses, and staging-site preview.
+- Optional local web UI foundation with dashboard, browser target config creation, run initialization, run detail, stage readiness/gating, live events, status/stage/artifact/object APIs, a unified artifact/object library, noindex responses, and staging-site preview.
 
 ## Reuse Principle
 
@@ -54,10 +54,11 @@ Change only what prevents reuse:
 | Optional dependencies | Complete | `web` extra installs Starlette, Jinja2, and uvicorn without making them core dependencies. |
 | CLI entry point | Complete | `archive-recovery web` serves the local dashboard with configurable runs root, default config, host, and port. |
 | Local safety | Complete | Defaults to loopback and requires `--allow-nonlocal` for non-loopback binds. |
-| Pages | Complete | Dashboard, targets, browser target creation, runs index with run initialization, run detail, artifact list, events, metrics, readiness timeline, and staging-site preview. |
+| Pages | Complete | Dashboard, targets, browser target creation, runs index with run initialization, run detail, artifact list, object library/viewer routes, events, metrics, readiness timeline, and staging-site preview. |
 | Stage runner | Complete | Starts one gated stage per run in-process, records status in `ops/status.json`, events in `logs/events.jsonl`, logs in `logs/<stage>.log`, and an active lock in `ops/stage-lock.json`. |
-| APIs | Complete | Exposes config defaults/validation/creation, run initialization/detail, status, stage readiness, events, event stream, artifacts, stage start, reports, artifacts, and staging-site file routes. |
+| APIs | Complete | Exposes config defaults/validation/creation, run initialization/detail, status, stage readiness, events, event stream, artifacts, indexed objects, safe object source/preview/download/bytes modes, stage start, reports, artifacts, and staging-site file routes. |
 | Staging response safety | Complete | Adds `X-Robots-Tag: noindex, noarchive` to web responses and explicitly to staging-site preview responses. |
+| Object viewer safety | Complete | Indexes manifests, reports, logs, config, ops, CDX/capture-browser outputs, staging files, and manifest-referenced raw blobs while keeping archived HTML/JS inert in the viewer. |
 
 ## Existing Scripts To Turn Into Plugins
 
@@ -107,6 +108,7 @@ archive_recovery/
     app.py
     jobs.py
     fs.py
+    object_index.py
   plugins/
     base.py
     phpbb/
@@ -149,17 +151,19 @@ archive-recovery phpbb wire-archive --run-id RUN_ID
 7. Added validation/report aggregation around existing run artifacts.
 8. Migrated capture-browser generation.
 9. Added the optional local web frontend foundation.
+10. Added the unified artifact/object library and safe object viewer modes for source, preview, download, and bytes access.
 
 ## Next Steps
 
-1. Add focused tests for URL normalization, output path mapping, MIME classification, Wayback error detection, dependency extraction, link rewriting, validation, and web path-safety helpers.
+1. Add focused tests for URL normalization, output path mapping, MIME classification, Wayback error detection, dependency extraction, link rewriting, validation, web path-safety helpers, object indexing, safe viewer modes, and manifest-to-raw-blob provenance.
 2. Decide whether the dependency inventory feedback pass should return as a generic package stage or remain folded into targeted iteration workflows.
 3. Add generic `promote` and `serve` commands with explicit validation/privacy gates before any public output path is written.
 4. Promote phpBB/forum repair scripts into plugins without hardcoded target paths.
 5. Add stage cancellation or pause/resume controls for the local web UI if long-running operator sessions need them.
 6. Add optional web controls for safe stage-specific parameters beyond inventory `force` and `resume_key` only when the CLI behavior is stable.
 7. Add authentication or another explicit access-control layer before considering any non-tailnet shared deployment of the operator UI.
-8. Keep generated artifacts, raw data, logs, run directories, SQLite databases, and promoted site output ignored by git.
+8. Expand object preview support only through conservative MIME/type allowlists; do not execute archived HTML or JavaScript in the viewer.
+9. Keep generated artifacts, raw data, logs, run directories, SQLite databases, and promoted site output ignored by git.
 
 ## Best-Practice Constraints
 

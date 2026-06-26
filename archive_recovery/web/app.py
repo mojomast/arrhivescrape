@@ -9,6 +9,7 @@ from archive_recovery.config import ConfigError, load_config
 
 from .fs import ARTIFACT_DIRS, iter_artifacts, list_runs, read_events, run_status, safe_child, safe_run_dir
 from .jobs import JobManager, STAGES
+from .object_index import build_object_records, public_object, resolve_object
 from .workflow import defaults_payload, initialize_run_from_config, interview_from_payload, list_target_configs, render_and_validate, request_payload, run_details, stage_readiness, write_config_from_payload
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -60,7 +61,7 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         return render(
             request,
             "run.html",
-            {"request": request, "run_id": run_id, "status": run_status(run_dir), "artifacts": iter_artifacts(run_dir), "events": read_events(run_dir), "stages": stage_readiness(run_dir, STAGES)},
+            {"request": request, "run_id": run_id, "status": run_status(run_dir), "artifacts": iter_artifacts(run_dir), "object_count": len(build_object_records(run_dir)), "events": read_events(run_dir), "stages": stage_readiness(run_dir, STAGES)},
         )
 
     async def api_status(request: Any) -> JSONResponse:
@@ -104,7 +105,9 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
 
     async def api_run_detail(request: Any) -> JSONResponse:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
-        return JSONResponse(run_details(run_dir, run_status(run_dir), iter_artifacts(run_dir), STAGES))
+        detail = run_details(run_dir, run_status(run_dir), iter_artifacts(run_dir), STAGES)
+        detail["object_count"] = len(build_object_records(run_dir))
+        return JSONResponse(detail)
 
     async def api_run_stages(request: Any) -> JSONResponse:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
@@ -150,6 +153,65 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         run_dir = safe_run_dir(root, request.path_params["run_id"])
         return JSONResponse({"artifacts": iter_artifacts(run_dir)})
 
+    async def api_objects(request: Any) -> JSONResponse:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        objects = build_object_records(run_dir)
+        return JSONResponse({"run_id": run_dir.name, "count": len(objects), "objects": objects})
+
+    async def api_object_detail(request: Any) -> JSONResponse:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        record = resolve_object(run_dir, request.path_params["object_id"])
+        if record is None:
+            return JSONResponse({"error": "object not found"}, status_code=404)
+        return JSONResponse(public_object(record))
+
+    async def object_library(request: Any) -> HTMLResponse:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        objects = build_object_records(run_dir)
+        return render(request, "artifacts.html", {"request": request, "run_id": run_dir.name, "objects": objects, "count": len(objects)})
+
+    async def object_view(request: Any) -> Response:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        record = resolve_object(run_dir, request.path_params["object_id"])
+        if record is None:
+            return PlainTextResponse("object not found", status_code=404)
+        return render(request, "artifact_view.html", {"request": request, "run_id": run_dir.name, "object": public_object(record)})
+
+    def object_response(request: Any, *, mode: str) -> Response:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        record = resolve_object(run_dir, request.path_params["object_id"])
+        if record is None:
+            return PlainTextResponse("object not found", status_code=404)
+        path = record.get("_file_path")
+        if not isinstance(path, Path) or not path.is_file():
+            return PlainTextResponse("object file not found", status_code=404)
+        media_type = str(record.get("media_type") or "application/octet-stream")
+        preview = str(record.get("preview_category") or "none")
+        strict_headers = {"Content-Security-Policy": "default-src 'none'; sandbox", "X-Content-Type-Options": "nosniff"}
+        if mode == "source":
+            if preview != "source":
+                return PlainTextResponse("source preview not available", status_code=415, headers=strict_headers)
+            return FileResponse(path, media_type="text/plain; charset=utf-8", headers=strict_headers)
+        if mode == "preview":
+            if preview not in {"image", "audio", "video"}:
+                return PlainTextResponse("inline preview not available", status_code=415, headers=strict_headers)
+            return FileResponse(path, media_type=media_type, headers=strict_headers)
+        if mode == "download":
+            return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+        return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+
+    async def object_source(request: Any) -> Response:
+        return object_response(request, mode="source")
+
+    async def object_preview(request: Any) -> Response:
+        return object_response(request, mode="preview")
+
+    async def object_download(request: Any) -> Response:
+        return object_response(request, mode="download")
+
+    async def object_bytes(request: Any) -> Response:
+        return object_response(request, mode="bytes")
+
     async def start_stage(request: Any) -> Response:
         payload: dict[str, Any] = {}
         if request.headers.get("content-type", ""):
@@ -174,7 +236,10 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
             return PlainTextResponse(str(exc), status_code=403)
         if not path.is_file():
             return PlainTextResponse("not found", status_code=404)
-        return FileResponse(path)
+        for record in build_object_records(run_dir):
+            if record.get("display_path") == requested:
+                return RedirectResponse(f"/runs/{run_dir.name}/artifacts/view/{record['object_id']}", status_code=303)
+        return FileResponse(path, media_type="application/octet-stream", filename=path.name)
 
     async def report_file(request: Any) -> Response:
         try:
@@ -200,7 +265,7 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
             return PlainTextResponse(str(exc), status_code=403)
         if not path.is_file():
             return PlainTextResponse("not found", status_code=404)
-        return FileResponse(path, headers={"X-Robots-Tag": "noindex, noarchive"})
+        return FileResponse(path, headers={"X-Robots-Tag": "noindex, noarchive", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline';"})
 
     routes = [
         Route("/", dashboard),
@@ -222,8 +287,22 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         Route("/api/runs/{run_id}/events", api_events),
         Route("/api/runs/{run_id}/events/stream", event_stream),
         Route("/api/runs/{run_id}/artifacts", api_artifacts),
+        Route("/api/runs/{run_id}/objects", api_objects),
+        Route("/api/runs/{run_id}/objects/{object_id}", api_object_detail),
+        Route("/api/runs/{run_id}/objects/{object_id}/source", object_source),
+        Route("/api/runs/{run_id}/objects/{object_id}/preview", object_preview),
+        Route("/api/runs/{run_id}/objects/{object_id}/download", object_download),
+        Route("/api/runs/{run_id}/objects/{object_id}/bytes", object_bytes),
         Route("/api/runs/{run_id}/stages/{stage}", start_stage, methods=["POST"]),
         Route("/runs/{run_id}/reports/{path:path}", report_file),
+        Route("/runs/{run_id}/artifacts", object_library),
+        Route("/runs/{run_id}/artifacts/view/{object_id}", object_view),
+        Route("/runs/{run_id}/objects", object_library),
+        Route("/runs/{run_id}/objects/{object_id}", object_view),
+        Route("/runs/{run_id}/content/{object_id}/source", object_source),
+        Route("/runs/{run_id}/content/{object_id}/preview", object_preview),
+        Route("/runs/{run_id}/content/{object_id}/download", object_download),
+        Route("/runs/{run_id}/content/{object_id}/bytes", object_bytes),
         Route("/runs/{run_id}/artifacts/{path:path}", artifact_file),
         Route("/runs/{run_id}/site/", site_file),
         Route("/runs/{run_id}/site/{path:path}", site_file),
@@ -235,6 +314,14 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
     async def noindex_headers(request: Any, call_next: Any) -> Response:
         response = await call_next(request)
         response.headers.setdefault("X-Robots-Tag", "noindex, noarchive")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if not response.headers.get("content-security-policy"):
+            if request.url.path.startswith(("/runs/",)) and "/content/" in request.url.path:
+                response.headers.setdefault("Content-Security-Policy", "default-src 'none'; sandbox")
+            else:
+                response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
         return response
 
     return app

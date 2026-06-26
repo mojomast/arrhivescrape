@@ -59,7 +59,9 @@ tailscale serve status
 - `/targets/new` creates a conservative browser-safe target config using the same defaults, TOML renderer, and validation as the CLI interview.
 - `/runs` lists all runs under the selected runs root.
 - `/runs` also has run initialization controls for known target configs.
-- `/runs/<run_id>` shows run status, current stage, progress counts, stage readiness, gated stage controls, recent events, artifacts, and staging-site access.
+- `/runs/<run_id>` shows run status, current stage, progress counts, stage readiness, gated stage controls, recent events, artifacts, object library access, and staging-site access.
+- `/runs/<run_id>/objects` shows the unified object library for indexed run artifacts and manifest-referenced raw blobs.
+- `/runs/<run_id>/objects/<object_id>` shows the unified object viewer with source, preview, download, and bytes actions when those modes are safe for the object type.
 - `/runs/<run_id>/site/` serves `staging/normalized-site/` for local inspection after normalization.
 
 ## Browser Target And Run Workflow
@@ -68,7 +70,7 @@ tailscale serve status
 2. Submit the form to write `configs/<domain>.toml` or a simple custom `.toml` filename under `configs/`.
 3. Open `/runs`, select the config, optionally enter a run ID, and initialize the run.
 4. Open `/runs/<run_id>` and run stages in readiness order.
-5. Inspect reports and artifacts from the run page, and preview normalized output at `/runs/<run_id>/site/` after `normalize` succeeds.
+5. Inspect reports, artifacts, and indexed objects from the run page or `/runs/<run_id>/objects`, and preview normalized output at `/runs/<run_id>/site/` after `normalize` succeeds.
 
 The equivalent JSON API flow is `GET /api/config/defaults`, optional `POST /api/config/validate`, `POST /api/configs`, then `POST /api/runs`.
 
@@ -109,7 +111,7 @@ curl -X POST \
   http://127.0.0.1:18080/api/runs/my-first-run/stages/inventory
 ```
 
-## Events, Status, And Artifact APIs
+## Events, Status, Artifact, And Object APIs
 
 - `GET /api/status` returns the runs root and summaries for known runs.
 - `GET /api/configs` lists target configs under `configs/`.
@@ -122,12 +124,42 @@ curl -X POST \
 - `GET /api/runs/<run_id>/stages` returns stage requirements, outputs, completion state, blockers, and `ready` flags.
 - `GET /api/runs/<run_id>/events?limit=200` returns recent events from `logs/events.jsonl`; the limit is clamped between 1 and 2000.
 - `GET /api/runs/<run_id>/events/stream` streams server-sent `progress` events for the run page.
-- `GET /api/runs/<run_id>/artifacts` lists files under `config`, `manifests`, `reports`, `logs`, and `ops` with size, modified time, kind, and inferred stage.
+- `GET /api/runs/<run_id>/artifacts` lists files under `config`, `manifests`, `reports`, `logs`, `ops`, CDX/capture-browser outputs, staging output, and indexed raw blob references with size, modified time, kind, category, and inferred stage when available.
+- `GET /api/runs/<run_id>/objects` returns the indexed object library. Categories include `manifests`, `reports`, `logs`, `config`, `ops`, `cdx`, `staging`, and raw content-addressed blobs referenced by manifests.
+- `GET /api/runs/<run_id>/objects/<object_id>` returns object metadata, category, size, modified time, MIME hints, manifest provenance when known, and available safe viewer modes.
+- `GET /api/runs/<run_id>/objects/<object_id>/source` returns text-like content as inert source for review.
+- `GET /api/runs/<run_id>/objects/<object_id>/preview` returns a constrained preview for object types that can be viewed safely without executing archived code.
+- `GET /api/runs/<run_id>/objects/<object_id>/download` returns the object as an attachment.
+- `GET /api/runs/<run_id>/objects/<object_id>/bytes` returns raw bytes for tools and diagnostics.
 - `POST /api/runs/<run_id>/stages/<stage>` starts a gated stage and returns `202` JSON for API callers or redirects back to the run page for browser form posts.
 - `GET /runs/<run_id>/artifacts/<path>` serves a listed artifact file.
 - `GET /runs/<run_id>/reports/<path>` serves a report file from `reports`.
+- `GET /runs/<run_id>/objects` serves the object library page.
+- `GET /runs/<run_id>/objects/<object_id>` serves the unified object viewer page.
 
 Status metrics are derived from known manifests and reports, including inventory records, selected captures, download results, dependency records, missing dependency requests, normalized files, report count, staging file count, and external-link count when available.
+
+## Unified Object Library And Viewer
+
+The object library is the preferred way to inspect run outputs because it presents filesystem artifacts and manifest-linked blobs through one indexed model instead of separate report/artifact links. It indexes:
+
+- `manifests`: JSONL and JSON outputs that connect pipeline stages.
+- `reports`: validation, selection, download, dependency, normalization, capture-browser, and other generated reports.
+- `logs`: stage logs and event streams.
+- `config`: frozen run config and related config artifacts.
+- `ops`: status, lock, and operator state files.
+- `cdx`: CDX and capture-browser inventory artifacts when present.
+- `staging`: normalized-site files generated for local inspection.
+- Raw blobs referenced by manifests: content-addressed source bytes stored under raw storage and connected back to selection/download/site manifests when the index can resolve them.
+
+Viewer modes are deliberately separate:
+
+- `source` is for text-oriented inspection and renders content as inert source.
+- `preview` is only for object types that can be represented safely without executing archived scripts.
+- `download` serves an attachment for local tools or manual review.
+- `bytes` serves raw object bytes for diagnostics and scripted consumers.
+
+Archived HTML and JavaScript are not executed in the object viewer. HTML source may be displayed as text, and bytes may be downloaded, but the viewer does not mount archived HTML/JS as active same-origin application content. Use `/runs/<run_id>/site/` only for the normalized staging-site preview after reviewing the run's safety and privacy posture.
 
 ## Noindex Staging Responses
 
@@ -144,10 +176,20 @@ Status metrics are derived from known manifests and reports, including inventory
 - Stage readiness blocks premature stage starts and stage locks block concurrent stages, but operators should still inspect failures before retrying or forcing reruns.
 - Run IDs cannot contain path separators and must resolve under the configured runs root.
 - Artifact, report, and staging-site file paths are resolved under their allowed roots to reject traversal and symlink escapes.
+- Object IDs and object file paths are resolved through the object index and allowed roots to reject traversal and symlink escapes.
 - The UI serves existing local run artifacts only. Do not publish `runs/`, `raw/`, `data/`, manifests, logs, reports, or status files.
+- The object viewer does not execute archived HTML or JavaScript; source and preview modes are inspection tools, not a replay browser.
 - `X-Robots-Tag: noindex, noarchive` is a fallback header, not an authorization boundary.
 - Public promotion remains a separate approval concern. Treat the web UI as private operator tooling until validation and privacy review pass.
 - Third-party recovery and publication policy still come from the target config and pipeline behavior; the web UI does not relax those controls.
+
+## Remaining Limitations And Next Steps
+
+- Object indexing depends on artifacts and manifests already written by completed stages; incomplete or failed stages may leave gaps.
+- Raw blob discovery is limited to blobs referenced by known manifests, not every file that may exist under raw storage.
+- Preview support is intentionally conservative and should expand by MIME/type allowlist rather than by executing archived content.
+- The object library is still private operator tooling and does not replace validation, privacy review, promotion, or publication gates.
+- Additional tests should cover object indexing, safe mode selection, path containment, MIME handling, and manifest-to-blob provenance.
 
 ## Troubleshooting
 
@@ -158,5 +200,7 @@ Status metrics are derived from known manifests and reports, including inventory
 - `stage <name> is not ready`: check `/api/runs/<run_id>/stages` or the run page readiness timeline for missing manifests, missing frozen config, or an active stage lock.
 - `another stage is already running`: wait for the active stage to finish, then refresh the run page or check `/api/runs/<run_id>/status`.
 - `staging site not found`: run `normalize` successfully before opening `/runs/<run_id>/site/`.
+- `object not found`: refresh the run page or object library after the producing stage finishes; if the object is a raw blob, confirm the manifest references it.
+- `preview is unavailable`: use source, download, or bytes mode; archived HTML/JS is intentionally not executed in the object viewer.
 - A stage failed with little detail on the page: inspect `runs/<run_id>/logs/<stage>.log` and `runs/<run_id>/ops/status.json`.
 - Events are not updating: refresh the run page, then check `runs/<run_id>/logs/events.jsonl`; the browser stream polls the local file every few seconds.

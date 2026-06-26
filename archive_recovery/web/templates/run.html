@@ -8,6 +8,7 @@
   </div>
   <div class="actions">
     <a class="button secondary" href="/runs/{{ run_id }}/site/">Open site</a>
+    <a class="button secondary" href="/runs/{{ run_id }}/artifacts">Object library</a>
     <a class="button secondary" href="/runs/{{ run_id }}/reports/captures-browser/index.html">Capture browser</a>
     <a class="button secondary" href="/api/runs/{{ run_id }}">Run JSON</a>
     <a class="button secondary" href="/api/runs/{{ run_id }}/stages">Stages JSON</a>
@@ -20,6 +21,7 @@
   <article><span>{{ status.stage or 'none' }}</span><strong>Current stage</strong></article>
   <article><span>{{ status.metrics.selected_captures }}</span><strong>Selected</strong></article>
   <article><span>{{ status.metrics.normalized_files }}</span><strong>Public files</strong></article>
+  <article><span>{{ object_count }}</span><strong>Objects</strong></article>
 </section>
 
 <section class="panel">
@@ -79,10 +81,10 @@
 </section>
 
 <section class="panel">
-  <div class="section-head compact"><h2>Artifacts</h2><div class="actions"><a href="/runs/{{ run_id }}/site/">Open staging site</a><a href="/runs/{{ run_id }}/reports/captures-browser/index.html">Open capture browser</a></div></div>
+  <div class="section-head compact"><div><h2>Artifacts</h2><p class="muted">Unified object library contains <strong>{{ object_count }}</strong> indexed objects. Legacy manifest/report artifacts remain listed below.</p></div><div class="actions"><a class="button secondary" href="/runs/{{ run_id }}/artifacts">Open object library ({{ object_count }})</a><a href="/runs/{{ run_id }}/site/">Open staging site</a><a href="/runs/{{ run_id }}/reports/captures-browser/index.html">Open capture browser</a></div></div>
   <div class="artifact-list">
     {% for artifact in artifacts %}
-    <a class="artifact" href="/runs/{{ run_id }}/artifacts/{{ artifact.path }}">
+    <a class="artifact" href="/runs/{{ run_id }}/artifacts">
       <span><code>{{ artifact.path }}</code></span>
       <small>{{ artifact.stage }} · {{ artifact.kind }} · {{ artifact.size }} bytes</small>
     </a>

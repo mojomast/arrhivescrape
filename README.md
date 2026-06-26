@@ -63,7 +63,7 @@ The same commands are available through the installed script as `archive-recover
 
 ## Local Web UI
 
-The optional web UI is a local operator console for the full run workflow. It can list and create target configs under `configs/`, initialize runs with frozen `run-config.json` files, gate stage controls until their required manifests exist, stream progress events, expose status/stage/artifact APIs, and serve the normalized staging site from `runs/<run_id>/staging/normalized-site/` for inspection.
+The optional web UI is a local operator console for the full run workflow. It can list and create target configs under `configs/`, initialize runs with frozen `run-config.json` files, gate stage controls until their required manifests exist, stream progress events, expose status/stage/artifact/object APIs, serve the normalized staging site from `runs/<run_id>/staging/normalized-site/`, and provide a unified artifact/object library for inspecting run outputs.
 
 Start it from the repo root after installing the `web` extra:
 
@@ -84,10 +84,13 @@ Key local endpoints:
 - `POST /runs` or `POST /api/runs` initializes a run from a config and freezes the normalized run config.
 - `GET /api/runs/<run_id>/stages` returns readiness, requirements, outputs, completed state, blockers, and `ready` flags for each stage.
 - `POST /api/runs/<run_id>/stages/<stage>` starts `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, or `captures-browser` when the run is ready for that stage.
-- `GET /api/status`, `/api/runs/<run_id>`, `/api/runs/<run_id>/status`, `/api/runs/<run_id>/events`, `/api/runs/<run_id>/events/stream`, and `/api/runs/<run_id>/artifacts` provide machine-readable run state, event streams, and artifact listings.
+- `GET /api/status`, `/api/runs/<run_id>`, `/api/runs/<run_id>/status`, `/api/runs/<run_id>/events`, `/api/runs/<run_id>/events/stream`, `/api/runs/<run_id>/artifacts`, `/api/runs/<run_id>/objects`, and object detail/source/preview/download/bytes APIs provide machine-readable run state, event streams, artifact listings, and indexed object library access.
+- `GET /runs/<run_id>/objects` opens the object library, and `GET /runs/<run_id>/objects/<object_id>` opens the unified viewer for indexed artifacts and raw blobs referenced by manifests.
 - `GET /runs/<run_id>/site/` previews the normalized staging site with `X-Robots-Tag: noindex, noarchive` headers.
 
-All web responses default to `X-Robots-Tag: noindex, noarchive`; this is a safety belt for accidental exposure, not permission to publish run data. See [`docs/web-ui.md`](docs/web-ui.md) for operating details, safety guardrails, API notes, and troubleshooting.
+The object library indexes manifests, reports, logs, config, ops files, CDX/capture-browser outputs, staging files, and raw content-addressed blobs referenced by manifests. Viewer access is intentionally split into safe `source`, `preview`, `download`, and `bytes` modes; archived HTML/JS is shown as inert source or downloaded bytes, not executed inside the viewer.
+
+All web responses default to `X-Robots-Tag: noindex, noarchive`; this is a safety belt for accidental exposure, not permission to publish run data. See [`docs/web-ui.md`](docs/web-ui.md) for operating details, safety guardrails, API notes, remaining limitations, and troubleshooting.
 
 The tracked suite is now built around migrated generic package modules for the main recovery pipeline, with optional local web operation layered on top. See [`docs/tooling-roadmap.md`](docs/tooling-roadmap.md) for completed work and next steps.
 

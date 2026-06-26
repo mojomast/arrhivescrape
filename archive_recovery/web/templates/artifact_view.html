@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Object {{ object.object_id }} - {{ run_id }}{% endblock %}
+{% block body %}
+<div class="section-head">
+  <div>
+    <p class="eyebrow">Object Viewer</p>
+    <h1><code>{{ object.display_path }}</code></h1>
+    <p class="muted"><span class="chip">{{ object.kind }}</span> <span class="chip stage">{{ object.stage }}</span> <span class="chip preview {{ object.preview_category }}">{{ object.preview_category }}</span> {{ object.media_type }} · {{ object.size }} bytes</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/runs/{{ run_id }}/artifacts">Library</a>
+    <a class="button secondary" href="/api/runs/{{ run_id }}/objects/{{ object.object_id }}">JSON</a>
+  </div>
+</div>
+
+<nav class="viewer-tabs" aria-label="Object viewer sections">
+  <a href="#preview">Preview</a>
+  <a href="#metadata">Metadata</a>
+  <a href="#provenance">Provenance</a>
+  <a href="#actions">Actions</a>
+</nav>
+
+<section class="panel viewer-panel" id="preview">
+  <div class="section-head compact"><h2>Preview</h2><span class="muted">Untrusted content is isolated; archived HTML/JavaScript is not executed.</span></div>
+  {% if object.preview_category == 'source' %}
+  <div class="banner warning">Source is rendered as <code>text/plain</code> inside a sandboxed frame. HTML, scripts, forms, and active content are not run.</div>
+  <iframe class="source-frame" title="Plain-text source preview" src="/runs/{{ run_id }}/content/{{ object.object_id }}/source" sandbox=""></iframe>
+  {% elif object.preview_category == 'image' %}
+  <div class="media-preview"><img src="/runs/{{ run_id }}/content/{{ object.object_id }}/preview" alt="Safe image preview for {{ object.display_path }}"></div>
+  {% elif object.preview_category == 'audio' %}
+  <div class="media-preview"><audio controls src="/runs/{{ run_id }}/content/{{ object.object_id }}/preview"></audio></div>
+  {% elif object.preview_category == 'video' %}
+  <div class="media-preview"><video controls src="/runs/{{ run_id }}/content/{{ object.object_id }}/preview"></video></div>
+  {% else %}
+  <div class="binary-fallback"><h3>Binary or unsupported object</h3><p class="empty">No inline preview is available for this object type. Use Download or Bytes for manual inspection in a trusted local tool.</p></div>
+  {% endif %}
+</section>
+
+<section class="panel" id="metadata">
+  <h2>Metadata</h2>
+  <dl class="metrics">
+    <div><dt>Object ID</dt><dd><code>{{ object.object_id }}</code></dd></div>
+    <div><dt>Path</dt><dd><code>{{ object.display_path }}</code></dd></div>
+    <div><dt>Kind</dt><dd>{{ object.kind }}</dd></div>
+    <div><dt>Stage</dt><dd>{{ object.stage }}</dd></div>
+    <div><dt>Preview</dt><dd>{{ object.preview_category }}</dd></div>
+    <div><dt>MIME</dt><dd>{{ object.media_type }}</dd></div>
+    <div><dt>Size</dt><dd>{{ object.size }} bytes</dd></div>
+    <div><dt>Modified</dt><dd>{{ object.mtime }}</dd></div>
+  </dl>
+</section>
+
+<section class="panel" id="provenance">
+  <h2>Provenance</h2>
+  <dl class="metrics">
+    <div><dt>Source URL</dt><dd>{{ object.source_url or '—' }}</dd></div>
+    <div><dt>Archive URL</dt><dd>{% if object.archive_url %}<a href="{{ object.archive_url }}">{{ object.archive_url }}</a>{% else %}—{% endif %}</dd></div>
+    <div><dt>Raw SHA-256</dt><dd><code>{{ object.raw_sha256 or '—' }}</code></dd></div>
+    <div><dt>Final SHA-256</dt><dd><code>{{ object.final_sha256 or '—' }}</code></dd></div>
+    <div><dt>Warnings</dt><dd>{% if object.warnings %}{{ object.warnings|join('; ') }}{% else %}—{% endif %}</dd></div>
+  </dl>
+</section>
+
+<section class="panel" id="actions">
+  <h2>Actions</h2>
+  <p class="muted">Download and byte views expose untrusted archived bytes. Inspect locally with care and do not publish raw run artifacts.</p>
+  <div class="actions object-view-actions">
+    {% if object.preview_category == 'source' %}<a class="button secondary" href="/runs/{{ run_id }}/content/{{ object.object_id }}/source">Open source text</a>{% endif %}
+    {% if object.preview_category in ['image', 'audio', 'video'] %}<a class="button secondary" href="/runs/{{ run_id }}/content/{{ object.object_id }}/preview">Open media preview</a>{% endif %}
+    <a class="button secondary" href="/runs/{{ run_id }}/content/{{ object.object_id }}/download">Download</a>
+    <a class="button secondary" href="/runs/{{ run_id }}/content/{{ object.object_id }}/bytes">Raw bytes</a>
+  </div>
+</section>
+{% endblock %}

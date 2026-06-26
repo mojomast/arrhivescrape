@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Objects - {{ run_id }} - Archive Recovery{% endblock %}
+{% block body %}
+<div class="section-head">
+  <div>
+    <p class="eyebrow">Object Library</p>
+    <h1><code>{{ run_id }}</code></h1>
+    <p class="muted">{{ count }} indexed objects from artifacts, manifests, staging files, CDX pages, and raw blobs.</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/runs/{{ run_id }}">Run</a>
+    <a class="button secondary" href="/api/runs/{{ run_id }}/objects">Objects JSON</a>
+  </div>
+</div>
+
+<section class="panel object-library" data-object-library>
+  <div class="banner info"><strong>Safe viewer:</strong> source files are served as plain text, media previews are limited to safe image/audio/video MIME types, and archived HTML/JavaScript is never executed in this library.</div>
+  <div class="object-filters" aria-label="Object filters">
+    <label>Search
+      <input type="search" data-object-search placeholder="Path, id, URL, MIME type…" autocomplete="off">
+    </label>
+    <label>Kind
+      <select data-object-kind>
+        <option value="">All kinds</option>
+        {% for kind in objects|map(attribute='kind')|unique|sort %}<option value="{{ kind|lower }}">{{ kind }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Stage
+      <select data-object-stage>
+        <option value="">All stages</option>
+        {% for stage in objects|map(attribute='stage')|unique|sort %}<option value="{{ stage|lower }}">{{ stage }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Preview
+      <select data-object-preview>
+        <option value="">All previews</option>
+        {% for preview in objects|map(attribute='preview_category')|unique|sort %}<option value="{{ preview|lower }}">{{ preview }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="filter-count"><strong data-object-visible-count>{{ count }}</strong> of {{ count }} shown</div>
+  </div>
+  <div class="object-table-wrap table-wrap">
+    <table class="object-table">
+      <thead><tr><th>Object</th><th>Classification</th><th>Provenance</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for object in objects %}
+      {% if loop.changed(object.stage) %}<tr class="object-group" data-object-group><th colspan="4">{{ object.stage }} stage</th></tr>{% endif %}
+      <tr data-object-row data-kind="{{ object.kind|lower }}" data-stage="{{ object.stage|lower }}" data-preview="{{ object.preview_category|lower }}" data-search="{{ object.display_path|lower }} {{ object.object_id|lower }} {{ object.kind|lower }} {{ object.stage|lower }} {{ object.media_type|lower }} {{ object.source_url|default('', true)|lower }}">
+        <td class="object-name"><a href="/runs/{{ run_id }}/artifacts/view/{{ object.object_id }}"><code>{{ object.display_path }}</code></a><br><small>{{ object.object_id }}</small></td>
+        <td><div class="chip-row"><span class="chip">{{ object.kind }}</span><span class="chip stage">{{ object.stage }}</span><span class="chip preview {{ object.preview_category }}">{{ object.preview_category }}</span></div><small>{{ object.media_type }} · {{ object.size }} bytes · {{ object.mtime }}</small></td>
+        <td>{% if object.source_url %}<small class="source-url">{{ object.source_url }}</small>{% else %}<span class="muted">Local generated or manifest artifact</span>{% endif %}{% if object.warnings %}<br><span class="chip warning">warnings</span>{% endif %}</td>
+        <td class="object-actions"><a href="/runs/{{ run_id }}/artifacts/view/{{ object.object_id }}">View</a>{% if object.preview_category == 'source' %}<a href="/runs/{{ run_id }}/content/{{ object.object_id }}/source">Source</a>{% elif object.preview_category in ['image', 'audio', 'video'] %}<a href="/runs/{{ run_id }}/content/{{ object.object_id }}/preview">Preview</a>{% endif %}<a href="/runs/{{ run_id }}/content/{{ object.object_id }}/download">Download</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="empty">No objects found for this run.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="empty" data-object-empty hidden>No objects match the current filters.</p>
+</section>
+{% endblock %}
