@@ -68,7 +68,13 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         parsed = urlparse(value)
         if not parsed.scheme or not parsed.netloc:
             return False
-        return parsed.scheme == request.url.scheme and parsed.netloc.lower() == request.headers.get("host", "").lower()
+        request_host = host_name(request.headers.get("host", ""))
+        origin_host = (parsed.hostname or "").lower().rstrip(".")
+        if parsed.scheme != request.url.scheme or origin_host != request_host:
+            return False
+        request_port = request.url.port or (443 if request.url.scheme == "https" else 80)
+        origin_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        return origin_port == request_port
 
     def bearer_authenticated(request: Any) -> bool:
         if not auth_token:

@@ -33,6 +33,33 @@ def test_cross_site_origin_blocked(web_client):
     assert response.status_code == 403
 
 
+def test_target_config_form_accepts_tailscale_origin(sample_workspace):
+    from starlette.testclient import TestClient
+
+    from archive_recovery.web import create_app
+
+    client = TestClient(create_app(runs_root=sample_workspace["runs"], allowed_hosts=["100.72.41.9"]), base_url="http://100.72.41.9:18080")
+    token = csrf(client)
+    response = client.post(
+        "/targets",
+        data={"csrf_token": token, "domain": "example.com", "config_name": "example.com.toml"},
+        headers={"Origin": "http://100.72.41.9:18080"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+
+def test_same_origin_accepts_implicit_default_port(sample_workspace):
+    from starlette.testclient import TestClient
+
+    from archive_recovery.web import create_app
+
+    client = TestClient(create_app(runs_root=sample_workspace["runs"], allowed_hosts=["100.72.41.9"]), base_url="http://100.72.41.9")
+    token = csrf(client)
+    response = client.post("/api/config/validate", json={"domain": "example.com", "csrf_token": token}, headers={"X-CSRF-Token": token, "Origin": "http://100.72.41.9"})
+    assert response.status_code == 200
+
+
 def test_site_preview_and_source_do_not_execute_html(web_client):
     preview = web_client.get("/runs/run-1/preview")
     assert preview.status_code == 200
