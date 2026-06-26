@@ -42,7 +42,7 @@ tailscale serve --bg --yes http://127.0.0.1:18080
 tailscale serve status
 ```
 
-When a proxy or Tailscale Serve forwards requests to a loopback web process, include the browser-facing host with `--allowed-host`. The web UI accepts same-origin unsafe requests against either the direct request host or an explicitly allowed `X-Forwarded-Host`/`X-Forwarded-Proto` origin; unlisted forwarded hosts are still rejected.
+When a proxy, MagicDNS hostname, or Tailscale Serve forwards requests to a loopback web process, include every browser-facing host with `--allowed-host`, such as the Tailscale IP, short host, and MagicDNS name. Unsafe requests still require CSRF, but trusted Origin checks accept either the direct request host, an explicitly allowed `X-Forwarded-Host`/`X-Forwarded-Proto` origin, or an Origin whose host is in the allowed-host list. This covers common Tailscale IP, port, MagicDNS, and HTTPS variants while unlisted Origin hosts are still rejected.
 
 ## Local Operation Model
 

@@ -88,7 +88,7 @@ archive-recovery web --runs-root runs --config configs/example.com.toml
 
 The default bind is `127.0.0.1:18080`. Non-loopback binding requires the explicit `--allow-nonlocal` flag and an auth token via `--auth-token` or `--auth-token-file`; `--unsafe-no-auth` exists only for isolated throwaway testing. The web app also applies Host, Origin/Referer, Fetch Metadata, CSRF, noindex, no-store, and CSP guardrails.
 
-For tailnet-only access, bind to a Tailscale IP with `--allow-nonlocal --auth-token ...` or use `tailscale serve` against a loopback instance protected by the same token. Keep generated run data private and do not expose the dashboard publicly.
+For tailnet-only access, bind to a Tailscale IP with `--allow-nonlocal --auth-token ...` or use `tailscale serve` against a loopback instance protected by the same token. Add any browser-facing Tailscale IP, short host, or MagicDNS name with `--allowed-host` when the visible URL differs from the bind host. Keep generated run data private and do not expose the dashboard publicly.
 
 Key local endpoints:
 
