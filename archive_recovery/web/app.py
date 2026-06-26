@@ -56,8 +56,20 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
 
     def host_name(host_header: str) -> str:
         if host_header.startswith("[") and "]" in host_header:
-            return host_header[1:].split("]", 1)[0].lower()
-        return host_header.rsplit(":", 1)[0].lower()
+            return host_header[1:].split("]", 1)[0].lower().rstrip(".")
+        return host_header.rsplit(":", 1)[0].lower().rstrip(".")
+
+    def host_port(host_header: str, scheme: str) -> tuple[str, int | None]:
+        try:
+            parsed = urlparse("//" + host_header)
+            host = (parsed.hostname or "").lower().rstrip(".")
+            port = parsed.port
+        except ValueError:
+            return host_name(host_header), None
+        return host, port or (443 if scheme == "https" else 80)
+
+    def first_header_value(value: str) -> str:
+        return value.split(",", 1)[0].strip()
 
     host_allowlist = {"127.0.0.1", "localhost", "::1", "testserver"}
     for item in allowed_hosts or []:
@@ -68,13 +80,17 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         parsed = urlparse(value)
         if not parsed.scheme or not parsed.netloc:
             return False
-        request_host = host_name(request.headers.get("host", ""))
         origin_host = (parsed.hostname or "").lower().rstrip(".")
-        if parsed.scheme != request.url.scheme or origin_host != request_host:
-            return False
-        request_port = request.url.port or (443 if request.url.scheme == "https" else 80)
         origin_port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        return origin_port == request_port
+        candidates = [(request.url.scheme, *host_port(request.headers.get("host", ""), request.url.scheme))]
+        forwarded_host = first_header_value(request.headers.get("x-forwarded-host", ""))
+        forwarded_proto = first_header_value(request.headers.get("x-forwarded-proto", "")) or request.url.scheme
+        if forwarded_host and forwarded_proto in {"http", "https"} and host_name(forwarded_host) in host_allowlist:
+            candidates.append((forwarded_proto, *host_port(forwarded_host, forwarded_proto)))
+        for scheme, candidate_host, candidate_port in candidates:
+            if parsed.scheme == scheme and origin_host == candidate_host and origin_port == candidate_port:
+                return True
+        return False
 
     def bearer_authenticated(request: Any) -> bool:
         if not auth_token:
@@ -563,7 +579,7 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
             if request.url.path.startswith(("/runs/",)) and "/content/" in request.url.path:
                 response.headers.setdefault("Content-Security-Policy", "default-src 'none'; sandbox")
             else:
-                response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+                response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
         return response
 
     return app

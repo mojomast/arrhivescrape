@@ -12,6 +12,7 @@ def test_global_headers_and_csrf_cookie(web_client):
     assert response.headers["x-robots-tag"] == "noindex, noarchive"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert "content-security-policy" in response.headers
+    assert "form-action 'self'" in response.headers["content-security-policy"]
     assert "archive_recovery_csrf" in response.cookies
 
 
@@ -58,6 +59,74 @@ def test_same_origin_accepts_implicit_default_port(sample_workspace):
     token = csrf(client)
     response = client.post("/api/config/validate", json={"domain": "example.com", "csrf_token": token}, headers={"X-CSRF-Token": token, "Origin": "http://100.72.41.9"})
     assert response.status_code == 200
+
+
+def test_create_run_form_accepts_forwarded_tailscale_origin(sample_workspace):
+    from starlette.testclient import TestClient
+
+    from archive_recovery.web import create_app
+
+    client = TestClient(create_app(runs_root=sample_workspace["runs"], allowed_hosts=["100.72.41.9"]), base_url="http://127.0.0.1:18080")
+    token = csrf(client)
+    response = client.post(
+        "/runs",
+        data={"csrf_token": token, "config_path": "configs/missing.toml"},
+        headers={"Origin": "http://100.72.41.9:18080", "X-Forwarded-Host": "100.72.41.9:18080", "X-Forwarded-Proto": "http"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 409
+    assert response.text != "Origin not allowed"
+
+
+def test_forwarded_origin_requires_allowed_host(sample_workspace):
+    from starlette.testclient import TestClient
+
+    from archive_recovery.web import create_app
+
+    client = TestClient(create_app(runs_root=sample_workspace["runs"], allowed_hosts=["100.72.41.9"]), base_url="http://127.0.0.1:18080")
+    token = csrf(client)
+    response = client.post(
+        "/runs",
+        data={"csrf_token": token, "config_path": "configs/missing.toml"},
+        headers={"Origin": "http://evil.example:18080", "X-Forwarded-Host": "evil.example:18080", "X-Forwarded-Proto": "http"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+    assert response.text == "Origin not allowed"
+
+
+def test_unsafe_routes_accept_forwarded_tailscale_origin(sample_workspace):
+    import json
+
+    from starlette.testclient import TestClient
+
+    from archive_recovery.cli import InterviewConfig, render_toml
+    from archive_recovery.web import create_app
+
+    root = sample_workspace["root"]
+    config_path = root / "configs" / "example.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(render_toml(InterviewConfig(domain="example.com", config_path=str(config_path), runs_root=str(sample_workspace["runs"]), raw_root=str(sample_workspace["raw"]), data_dir=str(root / "data"), recovered_root=str(root / "recovered"))), encoding="utf-8")
+    run = sample_workspace["run"]
+    frozen = json.loads((run / "config" / "run-config.json").read_text(encoding="utf-8"))
+    frozen["config_path"] = str(config_path)
+    (run / "config" / "run-config.json").write_text(json.dumps(frozen), encoding="utf-8")
+    (run / "manifests" / "inventory.raw.jsonl").write_text("{}\n", encoding="utf-8")
+
+    client = TestClient(create_app(runs_root=sample_workspace["runs"], allowed_hosts=["100.72.41.9"]), base_url="http://127.0.0.1:18080")
+    token = csrf(client)
+    headers = {"X-CSRF-Token": token, "Origin": "http://100.72.41.9:18080", "X-Forwarded-Host": "100.72.41.9:18080", "X-Forwarded-Proto": "http"}
+    cases = [
+        ("/targets", {"csrf_token": token, "domain": "target.example", "config_name": "target.example.toml"}, {"follow_redirects": False}, {303}),
+        ("/api/config/validate", {"csrf_token": token, "domain": "example.com"}, {}, {200}),
+        ("/api/configs", {"csrf_token": token, "domain": "api-target.example", "config_name": "api-target.example.toml"}, {}, {201}),
+        ("/api/runs", {"csrf_token": token, "config_path": str(config_path), "run_id": "run-api", "force": True}, {}, {201}),
+        ("/api/runs/run-1/stages/dependency-recovery", {"csrf_token": token}, {}, {409}),
+    ]
+    for path, payload, kwargs, expected_statuses in cases:
+        response = client.post(path, json=payload, headers=headers, **kwargs)
+        assert response.status_code in expected_statuses
+        assert response.text != "Origin not allowed"
 
 
 def test_site_preview_and_source_do_not_execute_html(web_client):

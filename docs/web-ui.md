@@ -42,6 +42,8 @@ tailscale serve --bg --yes http://127.0.0.1:18080
 tailscale serve status
 ```
 
+When a proxy or Tailscale Serve forwards requests to a loopback web process, include the browser-facing host with `--allowed-host`. The web UI accepts same-origin unsafe requests against either the direct request host or an explicitly allowed `X-Forwarded-Host`/`X-Forwarded-Proto` origin; unlisted forwarded hosts are still rejected.
+
 ## Local Operation Model
 
 - The app is served by `uvicorn` and the optional Starlette/Jinja2 web package.
