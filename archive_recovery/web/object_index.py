@@ -22,6 +22,7 @@ TEXT_EXTENSIONS = {
     ".md",
     ".toml",
     ".txt",
+    ".svg",
     ".xml",
 }
 TEXT_MIME_PREFIXES = ("text/",)
@@ -38,6 +39,19 @@ TEXT_MIME_TYPES = {
 IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 AUDIO_MIME_TYPES = {"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm"}
 VIDEO_MIME_TYPES = {"video/mp4", "video/ogg", "video/webm"}
+
+SCHEMA_HINTS = {
+    "inventory.raw.jsonl": "inventory",
+    "selection.pruned.jsonl": "selection",
+    "inventory.canonical.jsonl": "canonical-inventory",
+    "download.results.jsonl": "download-results",
+    "dependency-graph.jsonl": "dependency-graph",
+    "missing-dependency-requests.jsonl": "missing-dependencies",
+    "normalization.results.jsonl": "normalization-results",
+    "site.manifest.jsonl": "site-manifest",
+    "events.jsonl": "events",
+    "external-links.json": "external-links",
+}
 
 
 def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
@@ -90,6 +104,39 @@ def classify_preview(path: Path, media_type: str, content_class: str | None = No
     return "none"
 
 
+def schema_hint_for(display_path: str) -> str:
+    name = Path(display_path).name.lower()
+    return SCHEMA_HINTS.get(name, "")
+
+
+def renderer_for(path: Path, media_type: str, content_class: str | None = None, display_path: str = "") -> str:
+    """Return a safe UI renderer hint without changing raw preview rules."""
+
+    suffix = path.suffix.lower()
+    mime = media_type.split(";", 1)[0].strip().lower()
+    schema = schema_hint_for(display_path)
+    preview = classify_preview(path, media_type, content_class)
+    if schema:
+        return schema
+    if suffix == ".md":
+        return "markdown"
+    if suffix == ".jsonl" or mime == "application/x-ndjson":
+        return "jsonl"
+    if suffix == ".json" or mime in {"application/json", "application/ld+json"}:
+        return "json"
+    if suffix == ".log":
+        return "log"
+    if mime == "application/pdf" or suffix == ".pdf":
+        return "pdf-metadata"
+    if mime == "image/svg+xml" or suffix == ".svg":
+        return "svg-source"
+    if preview in {"image", "audio", "video"}:
+        return preview
+    if preview == "source":
+        return "text"
+    return "binary"
+
+
 def _content_class(path: Path, media_type: str, value: Any = None) -> str:
     if isinstance(value, str) and value:
         return value
@@ -134,6 +181,8 @@ def _record(run_dir: Path, *, kind: str, stage: str, file_path: Path, display_pa
         "raw_sha256": raw_sha,
         "final_sha256": final_sha,
         "preview_category": classify_preview(resolved, media_type, content_class),
+        "renderer": renderer_for(resolved, media_type, content_class, display_path),
+        "schema_hint": schema_hint_for(display_path),
         "warnings": warnings,
         "_file_path": resolved,
     }

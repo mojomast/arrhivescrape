@@ -7,7 +7,7 @@
     <h1><code>{{ run_id }}</code></h1>
   </div>
   <div class="actions">
-    <a class="button secondary" href="/runs/{{ run_id }}/site/">Open site</a>
+    <a class="button secondary" href="/runs/{{ run_id }}/preview">Sandboxed staging preview</a>
     <a class="button secondary" href="/runs/{{ run_id }}/artifacts">Object library</a>
     <a class="button secondary" href="/runs/{{ run_id }}/reports/captures-browser/index.html">Capture browser</a>
     <a class="button secondary" href="/api/runs/{{ run_id }}">Run JSON</a>
@@ -33,7 +33,13 @@
   <div class="stage-grid">
     {% for stage, state in stages.items() %}
     <form method="post" action="/api/runs/{{ run_id }}/stages/{{ stage }}" class="stage-card {% if state.completed %}done{% elif state.ready %}ready{% else %}blocked{% endif %}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="stage-button" type="submit" {% if not state.ready %}disabled aria-disabled="true" title="{{ state.reasons|join('; ') }}"{% endif %}>{{ stage }}{% if state.completed %} ✓{% endif %}</button>
+      {% if stage == 'inventory' %}
+      <label class="check-row"><input type="checkbox" name="force" value="true"> force refresh</label>
+      <label>Resume key <input name="resume_key" placeholder="optional CDX resumeKey"></label>
+      {% endif %}
+      {% if stage == 'normalize' %}<div class="banner warning compact">Normalize rewrites and clears the staging output directory before regenerating files.</div>{% endif %}
       <small>{% if state.completed %}completed outputs: {{ state.outputs|join(', ') }}{% elif state.reasons %}blocked: {{ state.reasons|join('; ') }}{% else %}ready; requirements satisfied{% endif %}</small>
     </form>
     {% endfor %}
@@ -81,7 +87,7 @@
 </section>
 
 <section class="panel">
-  <div class="section-head compact"><div><h2>Artifacts</h2><p class="muted">Unified object library contains <strong>{{ object_count }}</strong> indexed objects. Legacy manifest/report artifacts remain listed below.</p></div><div class="actions"><a class="button secondary" href="/runs/{{ run_id }}/artifacts">Open object library ({{ object_count }})</a><a href="/runs/{{ run_id }}/site/">Open staging site</a><a href="/runs/{{ run_id }}/reports/captures-browser/index.html">Open capture browser</a></div></div>
+  <div class="section-head compact"><div><h2>Artifacts</h2><p class="muted">Unified object library contains <strong>{{ object_count }}</strong> indexed objects. Legacy manifest/report artifacts remain listed below.</p></div><div class="actions"><a class="button secondary" href="/runs/{{ run_id }}/artifacts">Open object library ({{ object_count }})</a><a href="/runs/{{ run_id }}/preview">Open sandboxed staging preview</a><a href="/runs/{{ run_id }}/reports/captures-browser/index.html">Open capture browser</a></div></div>
   <div class="artifact-list">
     {% for artifact in artifacts %}
     <a class="artifact" href="/runs/{{ run_id }}/artifacts">

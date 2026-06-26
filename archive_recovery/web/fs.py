@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,20 +87,21 @@ def load_frozen_config(run_dir: Path) -> dict[str, Any]:
 
 def read_events(run_dir: Path, *, limit: int = 200) -> list[dict[str, Any]]:
     events_path = run_dir / "logs" / "events.jsonl"
-    events: list[dict[str, Any]] = []
+    events: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
     try:
-        for line in events_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError:
-                value = {"level": "warning", "message": line, "created_at": utc_now()}
-            if isinstance(value, dict):
-                events.append(value)
+        with events_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError:
+                    value = {"level": "warning", "message": line, "created_at": utc_now()}
+                if isinstance(value, dict):
+                    events.append(value)
     except FileNotFoundError:
         pass
-    return events[-limit:]
+    return list(events)
 
 
 def run_status(run_dir: Path) -> dict[str, Any]:

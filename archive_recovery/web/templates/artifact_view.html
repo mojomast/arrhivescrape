@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow">Object Viewer</p>
     <h1><code>{{ object.display_path }}</code></h1>
-    <p class="muted"><span class="chip">{{ object.kind }}</span> <span class="chip stage">{{ object.stage }}</span> <span class="chip preview {{ object.preview_category }}">{{ object.preview_category }}</span> {{ object.media_type }} · {{ object.size }} bytes</p>
+    <p class="muted"><span class="chip">{{ object.kind }}</span> <span class="chip stage">{{ object.stage }}</span> <span class="chip preview {{ object.preview_category }}">{{ object.preview_category }}</span> <span class="chip">{{ object.renderer }}</span> {{ object.media_type }} · {{ object.size }} bytes</p>
   </div>
   <div class="actions">
     <a class="button secondary" href="/runs/{{ run_id }}/artifacts">Library</a>
@@ -24,6 +24,14 @@
   <div class="section-head compact"><h2>Preview</h2><span class="muted">Untrusted content is isolated; archived HTML/JavaScript is not executed.</span></div>
   {% if object.preview_category == 'source' %}
   <div class="banner warning">Source is rendered as <code>text/plain</code> inside a sandboxed frame. HTML, scripts, forms, and active content are not run.</div>
+  {% if render_data.html %}
+  <div class="safe-render markdown-render">{{ render_data.html|safe }}</div>
+  {% elif render_data.rows %}
+  <div class="table-wrap"><table><thead><tr>{% for column in render_data.columns[:12] %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in render_data.rows %}<tr>{% for column in render_data.columns[:12] %}<td><code>{{ row.get(column, '') }}</code></td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+  <p class="muted">Showing {{ render_data.rows|length }} of {{ render_data.count }} rows. <a href="/api/runs/{{ run_id }}/objects/{{ object.object_id }}/rows">Rows JSON</a></p>
+  {% elif render_data.api_json %}
+  <p class="muted">Structured renderer available through <a href="{{ render_data.api_json }}">JSON API</a>{% if object.renderer in ['binary', 'pdf-metadata'] %} and <a href="{{ render_data.api_hex }}">hex sample API</a>{% endif %}.</p>
+  {% endif %}
   <iframe class="source-frame" title="Plain-text source preview" src="/runs/{{ run_id }}/content/{{ object.object_id }}/source" sandbox=""></iframe>
   {% elif object.preview_category == 'image' %}
   <div class="media-preview"><img src="/runs/{{ run_id }}/content/{{ object.object_id }}/preview" alt="Safe image preview for {{ object.display_path }}"></div>
@@ -32,7 +40,7 @@
   {% elif object.preview_category == 'video' %}
   <div class="media-preview"><video controls src="/runs/{{ run_id }}/content/{{ object.object_id }}/preview"></video></div>
   {% else %}
-  <div class="binary-fallback"><h3>Binary or unsupported object</h3><p class="empty">No inline preview is available for this object type. Use Download or Bytes for manual inspection in a trusted local tool.</p></div>
+  <div class="binary-fallback"><h3>Binary or unsupported object</h3><p class="empty">No inline preview is available for this object type. Use Download or Bytes for manual inspection in a trusted local tool.{% if render_data.api_hex %} A bounded <a href="{{ render_data.api_hex }}">hex sample API</a> is available for diagnostics.{% endif %}</p></div>
   {% endif %}
 </section>
 
@@ -44,6 +52,8 @@
     <div><dt>Kind</dt><dd>{{ object.kind }}</dd></div>
     <div><dt>Stage</dt><dd>{{ object.stage }}</dd></div>
     <div><dt>Preview</dt><dd>{{ object.preview_category }}</dd></div>
+    <div><dt>Renderer</dt><dd>{{ object.renderer }}</dd></div>
+    <div><dt>Schema</dt><dd>{{ object.schema_hint or '—' }}</dd></div>
     <div><dt>MIME</dt><dd>{{ object.media_type }}</dd></div>
     <div><dt>Size</dt><dd>{{ object.size }} bytes</dd></div>
     <div><dt>Modified</dt><dd>{{ object.mtime }}</dd></div>

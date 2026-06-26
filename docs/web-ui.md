@@ -23,7 +23,7 @@ Start the local dashboard:
 archive-recovery web --runs-root runs --config configs/example.com.toml
 ```
 
-Open `http://127.0.0.1:18080/`. The default bind is loopback-only. To bind outside loopback, pass both a non-local `--host` and `--allow-nonlocal` intentionally.
+Open `http://127.0.0.1:18080/`. The default bind is loopback-only. To bind outside loopback, pass a non-local `--host`, `--allow-nonlocal`, and an auth token through `--auth-token` or `--auth-token-file`. The app rejects unauthenticated non-loopback startup unless `--unsafe-no-auth` is explicitly provided for isolated throwaway testing.
 
 For a browser-only setup, open `/targets/new`, create a conservative target config under `configs/`, then open `/runs` and initialize a run from that config. The browser form uses the same TOML renderer and validation as `archive-recovery new`; it accepts a simple `.toml` filename only and writes under `configs/`.
 
@@ -31,7 +31,7 @@ For private tailnet access, prefer a local web process plus an explicit Tailscal
 
 ```bash
 TAILSCALE_IP=$(tailscale ip -4)
-archive-recovery web --runs-root runs --config configs/example.com.toml --host "$TAILSCALE_IP" --port 18080 --allow-nonlocal
+archive-recovery web --runs-root runs --config configs/example.com.toml --host "$TAILSCALE_IP" --port 18080 --allow-nonlocal --auth-token "$ARCHIVE_RECOVERY_WEB_TOKEN"
 ```
 
 Then open `http://<tailscale-ip>:18080/` from another device in the same tailnet. If using `tailscale serve`, keep the target local-only and verify the route before sharing it:
@@ -51,6 +51,7 @@ tailscale serve status
 - Browser-created runs must use a config whose `paths.runs_root` matches the web process `--runs-root`; initialization freezes `runs/<run_id>/config/run-config.json` and registers the run in the configured SQLite state database.
 - Run config, manifests, reports, logs, and status stay under the existing ignored run directory layout.
 - Stage output is produced by the same package pipeline modules used by `archive-recovery inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, and `captures-browser`.
+- HTML forms and unsafe API methods require CSRF tokens. Browser-originated unsafe requests are checked with Origin/Referer and Fetch Metadata headers, and all requests must use an allowed Host header.
 
 ## Pages
 
@@ -62,7 +63,8 @@ tailscale serve status
 - `/runs/<run_id>` shows run status, current stage, progress counts, stage readiness, gated stage controls, recent events, artifacts, object library access, and staging-site access.
 - `/runs/<run_id>/objects` shows the unified object library for indexed run artifacts and manifest-referenced raw blobs.
 - `/runs/<run_id>/objects/<object_id>` shows the unified object viewer with source, preview, download, and bytes actions when those modes are safe for the object type.
-- `/runs/<run_id>/site/` serves `staging/normalized-site/` for local inspection after normalization.
+- `/runs/<run_id>/preview` wraps the private staging output in a trusted page with a sandboxed iframe.
+- `/runs/<run_id>/site/` serves `staging/normalized-site/` for local inspection after normalization with a restrictive CSP.
 
 ## Browser Target And Run Workflow
 
@@ -70,7 +72,7 @@ tailscale serve status
 2. Submit the form to write `configs/<domain>.toml` or a simple custom `.toml` filename under `configs/`.
 3. Open `/runs`, select the config, optionally enter a run ID, and initialize the run.
 4. Open `/runs/<run_id>` and run stages in readiness order.
-5. Inspect reports, artifacts, and indexed objects from the run page or `/runs/<run_id>/objects`, and preview normalized output at `/runs/<run_id>/site/` after `normalize` succeeds.
+5. Inspect reports, artifacts, and indexed objects from the run page or `/runs/<run_id>/objects`, and preview normalized output through `/runs/<run_id>/preview` after `normalize` succeeds.
 
 The equivalent JSON API flow is `GET /api/config/defaults`, optional `POST /api/config/validate`, `POST /api/configs`, then `POST /api/runs`.
 
@@ -97,17 +99,18 @@ Readiness requirements:
 - `download`: `manifests/selection.pruned.jsonl`.
 - `dependencies`: `manifests/selection.pruned.jsonl` and `manifests/download.results.jsonl`.
 - `normalize`: `manifests/selection.pruned.jsonl`, `manifests/inventory.canonical.jsonl`, and `manifests/download.results.jsonl`.
-- `validate`: `manifests/site.manifest.jsonl`.
+- `validate`: `manifests/site.manifest.jsonl` and non-empty `staging/normalized-site/`.
 - `captures-browser`: `manifests/inventory.raw.jsonl`.
 
-The web runner keeps options intentionally narrow. The `inventory` stage accepts JSON options for `force` and `resume_key`; other stages use their pipeline defaults.
+The web runner keeps options intentionally narrow. The visible run page exposes `inventory` `force` and `resume_key`; other stages use their pipeline defaults. The normalize control warns that staging output is cleared before regenerated files are written.
 
 Example API start request:
 
 ```bash
 curl -X POST \
   -H 'Content-Type: application/json' \
-  -d '{"force": false}' \
+  -H 'X-CSRF-Token: <token-from-archive_recovery_csrf-cookie>' \
+  -d '{"force": false, "csrf_token": "<token>"}' \
   http://127.0.0.1:18080/api/runs/my-first-run/stages/inventory
 ```
 
@@ -126,7 +129,11 @@ curl -X POST \
 - `GET /api/runs/<run_id>/events/stream` streams server-sent `progress` events for the run page.
 - `GET /api/runs/<run_id>/artifacts` lists files under `config`, `manifests`, `reports`, `logs`, `ops`, CDX/capture-browser outputs, staging output, and indexed raw blob references with size, modified time, kind, category, and inferred stage when available.
 - `GET /api/runs/<run_id>/objects` returns the indexed object library. Categories include `manifests`, `reports`, `logs`, `config`, `ops`, `cdx`, `staging`, and raw content-addressed blobs referenced by manifests.
-- `GET /api/runs/<run_id>/objects/<object_id>` returns object metadata, category, size, modified time, MIME hints, manifest provenance when known, and available safe viewer modes.
+- `GET /api/runs/<run_id>/objects` returns the indexed object library. Query parameters include `limit`, `offset`, `kind`, `stage`, `preview`, `renderer`, and `q`.
+- `GET /api/runs/<run_id>/objects/<object_id>` returns object metadata, category, size, modified time, MIME hints, renderer/schema hints, manifest provenance when known, and available safe viewer modes.
+- `GET /api/runs/<run_id>/objects/<object_id>/rows` returns paginated JSONL or external-links table rows.
+- `GET /api/runs/<run_id>/objects/<object_id>/json` returns parsed JSON for small JSON objects.
+- `GET /api/runs/<run_id>/objects/<object_id>/hex` returns a bounded hex/ascii byte sample for binary inspection.
 - `GET /api/runs/<run_id>/objects/<object_id>/source` returns text-like content as inert source for review.
 - `GET /api/runs/<run_id>/objects/<object_id>/preview` returns a constrained preview for object types that can be viewed safely without executing archived code.
 - `GET /api/runs/<run_id>/objects/<object_id>/download` returns the object as an attachment.
@@ -159,7 +166,7 @@ Viewer modes are deliberately separate:
 - `download` serves an attachment for local tools or manual review.
 - `bytes` serves raw object bytes for diagnostics and scripted consumers.
 
-Archived HTML and JavaScript are not executed in the object viewer. HTML source may be displayed as text, and bytes may be downloaded, but the viewer does not mount archived HTML/JS as active same-origin application content. Use `/runs/<run_id>/site/` only for the normalized staging-site preview after reviewing the run's safety and privacy posture.
+Archived HTML and JavaScript are not executed in the object viewer. HTML source may be displayed as text, and bytes may be downloaded, but the viewer does not mount archived HTML/JS as active same-origin application content. Use `/runs/<run_id>/preview` for the normalized staging-site preview after reviewing the run's safety and privacy posture.
 
 ## Noindex Staging Responses
 
@@ -170,6 +177,8 @@ Archived HTML and JavaScript are not executed in the object viewer. HTML source 
 ## Safety Guardrails
 
 - The default host is `127.0.0.1`; non-local binding is blocked unless `--allow-nonlocal` is provided.
+- Non-loopback startup requires auth unless `--unsafe-no-auth` is explicitly used. Auth can be supplied by bearer token, auth cookie, or a one-time `?token=` visit that sets the cookie.
+- Unsafe methods require CSRF tokens unless authenticated with an `Authorization: Bearer ...` API request.
 - Tailscale access is private to the tailnet, but it still exposes local run metadata to tailnet peers that can reach the service.
 - Browser target creation is limited to simple filenames under `configs/`; run IDs and artifact paths are still validated separately.
 - Browser run initialization rejects configs whose `paths.runs_root` does not match the web process runs root.
@@ -195,11 +204,13 @@ Archived HTML and JavaScript are not executed in the object viewer. HTML source 
 
 - `web UI requires optional dependencies`: install with `python -m pip install -e '.[web]'`.
 - `web UI defaults to local-only`: use the default loopback host or pass `--allow-nonlocal` deliberately with a non-loopback `--host`.
+- `non-loopback web UI requires --auth-token`: pass `--auth-token` or `--auth-token-file`, or do not bind outside loopback.
+- `CSRF token required`: refresh a web page to set the CSRF cookie, then submit forms normally or include the cookie value in `csrf_token`/`X-CSRF-Token` for API calls.
 - `config path is required for this run`: pass `--config configs/<domain>.toml`, or initialize the run with `archive-recovery init --config ... --run-id ...` so a frozen config path is available.
 - `config paths.runs_root (...) does not match web runs root (...)`: restart the web UI with the matching `--runs-root`, or edit/create a config whose `paths.runs_root` matches the web process.
 - `stage <name> is not ready`: check `/api/runs/<run_id>/stages` or the run page readiness timeline for missing manifests, missing frozen config, or an active stage lock.
 - `another stage is already running`: wait for the active stage to finish, then refresh the run page or check `/api/runs/<run_id>/status`.
-- `staging site not found`: run `normalize` successfully before opening `/runs/<run_id>/site/`.
+- `staging site not found`: run `normalize` successfully before opening `/runs/<run_id>/preview` or `/runs/<run_id>/site/`.
 - `object not found`: refresh the run page or object library after the producing stage finishes; if the object is a raw blob, confirm the manifest references it.
 - `preview is unavailable`: use source, download, or bytes mode; archived HTML/JS is intentionally not executed in the object viewer.
 - A stage failed with little detail on the page: inspect `runs/<run_id>/logs/<stage>.log` and `runs/<run_id>/ops/status.json`.

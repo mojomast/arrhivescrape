@@ -12,6 +12,7 @@
 <section class="panel">
   <p class="lede">Create a conservative browser-safe config using the same TOML renderer and validation as <code>archive-recovery new</code>. Defaults favor private local recovery, polite archive access, and audit-only third-party handling.</p>
   <form method="post" action="/targets" class="config-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <fieldset>
       <legend>Target identity</legend>
       <div class="form-grid">
@@ -30,6 +31,8 @@
           </select><small>Start broad only when you know the archive volume is manageable.</small>
         </label>
         <label>Target date or era <input name="target_date" placeholder="optional, e.g. 2020-05"><small>Used by date-specific or era-based recovery.</small></label>
+        <label>CDX endpoint <input name="cdx_endpoint" value="https://web.archive.org/cdx/search/cdx"><small>Archive CDX endpoint. Keep generic unless using a compatible service.</small></label>
+        <label>CDX filters <input name="cdx_filters" value="statuscode:200"><small>Comma-separated CDX filters.</small></label>
         <label>CDX limit <input name="cdx_limit" type="number" min="1" max="100000" value="1000"><small>Safe starting cap for inventory requests.</small></label>
         <label>Minimum CDX interval <input name="cdx_min_interval_seconds" type="number" min="0" step="0.1" value="1.1"><small>Seconds between archive queries.</small></label>
       </div>
@@ -51,6 +54,8 @@
       <legend>Paths and serving</legend>
       <div class="form-grid">
         <label>Runs root <input name="runs_root" value="runs"><small>Must match the web UI runs root when creating runs here.</small></label>
+        <label>Raw root <input name="raw_root" value="raw/sha256"><small>Content-addressed raw capture storage root.</small></label>
+        <label>Data dir <input name="data_dir" value="data"><small>SQLite and local state directory.</small></label>
         <label>Recovered root <input name="recovered_root" placeholder="recovered/example.com"><small>Leave blank to derive from the domain.</small></label>
         <label>Publication policy
           <select name="publication_policy"><option value="private-tailnet">private-tailnet — default</option><option value="private-local">private-local</option><option value="public-noindex">public-noindex</option><option value="public-indexable">public-indexable</option></select><small>Public options should remain gated by validation and review.</small>
@@ -60,6 +65,7 @@
         </label>
         <label>Bind host <input name="bind_host" value="127.0.0.1"><small>Loopback by default.</small></label>
         <label>Bind port <input name="bind_port" type="number" min="1" max="65535" value="18080"><small>Local preview port.</small></label>
+        <label>Public hostname <input name="public_hostname" placeholder="optional"><small>Required only for reviewed public serving plans.</small></label>
       </div>
     </fieldset>
 

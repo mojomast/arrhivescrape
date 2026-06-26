@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
+import secrets
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from archive_recovery.config import ConfigError, load_config
 
@@ -15,7 +18,12 @@ from .workflow import defaults_payload, initialize_run_from_config, interview_fr
 PACKAGE_DIR = Path(__file__).resolve().parent
 
 
-def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None = None) -> Any:
+CSRF_COOKIE = "archive_recovery_csrf"
+AUTH_COOKIE = "archive_recovery_auth"
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None = None, auth_token: str | None = None, allowed_hosts: list[str] | None = None) -> Any:
     """Create the optional Starlette app.
 
     Starlette and Jinja2 are intentionally optional so the core CLI remains
@@ -37,7 +45,137 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
     templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 
     def render(request: Any, name: str, context: dict[str, Any]) -> HTMLResponse:
+        context.setdefault("csrf_token", getattr(request.state, "csrf_token", ""))
+        context.setdefault("auth_enabled", bool(auth_token))
         return templates.TemplateResponse(request, name, context)
+
+    def bool_payload(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value or "").lower() in {"1", "true", "yes", "on"}
+
+    def host_name(host_header: str) -> str:
+        if host_header.startswith("[") and "]" in host_header:
+            return host_header[1:].split("]", 1)[0].lower()
+        return host_header.rsplit(":", 1)[0].lower()
+
+    host_allowlist = {"127.0.0.1", "localhost", "::1", "testserver"}
+    for item in allowed_hosts or []:
+        if item:
+            host_allowlist.add(host_name(str(item)))
+
+    def same_origin(request: Any, value: str) -> bool:
+        parsed = urlparse(value)
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        return parsed.scheme == request.url.scheme and parsed.netloc.lower() == request.headers.get("host", "").lower()
+
+    def bearer_authenticated(request: Any) -> bool:
+        if not auth_token:
+            return False
+        header = request.headers.get("authorization", "")
+        return header == f"Bearer {auth_token}"
+
+    def request_authenticated(request: Any) -> bool:
+        if not auth_token:
+            return True
+        return bearer_authenticated(request) or request.cookies.get(AUTH_COOKIE) == auth_token or request.query_params.get("token") == auth_token
+
+    def csrf_valid(request: Any, payload: dict[str, Any] | None = None) -> bool:
+        if bearer_authenticated(request):
+            return True
+        cookie = request.cookies.get(CSRF_COOKIE)
+        provided = request.headers.get("x-csrf-token") or (payload or {}).get("csrf_token")
+        return bool(cookie and provided and secrets.compare_digest(str(cookie), str(provided)))
+
+    def parse_limit_offset(request: Any, *, default: int = 100, maximum: int = 1000) -> tuple[int, int]:
+        try:
+            limit = int(request.query_params.get("limit", str(default)))
+            offset = int(request.query_params.get("offset", "0"))
+        except ValueError:
+            limit, offset = default, 0
+        return max(1, min(limit, maximum)), max(0, offset)
+
+    def filtered_objects(request: Any, run_dir: Path) -> tuple[list[dict[str, Any]], int, int, int]:
+        objects = build_object_records(run_dir)
+        q = request.query_params.get("q", "").strip().lower()
+        for field in ("kind", "stage", "preview", "renderer"):
+            wanted = request.query_params.get(field, "").strip().lower()
+            if wanted:
+                key = "preview_category" if field == "preview" else field
+                objects = [obj for obj in objects if str(obj.get(key, "")).lower() == wanted]
+        if q:
+            objects = [obj for obj in objects if q in " ".join(str(obj.get(key, "")) for key in ("object_id", "display_path", "kind", "stage", "renderer", "media_type", "source_url")).lower()]
+        total = len(objects)
+        limit, offset = parse_limit_offset(request)
+        return objects[offset : offset + limit], total, limit, offset
+
+    def object_file(request: Any) -> tuple[Path | None, dict[str, Any] | None, Response | None]:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        record = resolve_object(run_dir, request.path_params["object_id"])
+        if record is None:
+            return None, None, PlainTextResponse("object not found", status_code=404)
+        path = record.get("_file_path")
+        if not isinstance(path, Path) or not path.is_file():
+            return None, record, PlainTextResponse("object file not found", status_code=404)
+        return path, record, None
+
+    def read_jsonl_rows(path: Path, *, limit: int, offset: int) -> tuple[list[dict[str, Any]], list[str], int]:
+        rows: list[dict[str, Any]] = []
+        columns: list[str] = []
+        total = 0
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(value, dict):
+                    continue
+                if total < 200:
+                    for key in value:
+                        if key not in columns:
+                            columns.append(key)
+                if total >= offset and len(rows) < limit:
+                    rows.append(value)
+                total += 1
+        return rows, columns, total
+
+    def rows_for_object(path: Path, record: dict[str, Any], *, limit: int, offset: int) -> dict[str, Any]:
+        renderer = str(record.get("renderer") or "")
+        if renderer == "external-links":
+            data = json.loads(path.read_text(encoding="utf-8"))
+            values = data.get("external_links", []) if isinstance(data, dict) else []
+            rows = [item for item in values if isinstance(item, dict)]
+            columns = ["source", "context", "attribute", "url"]
+            return {"columns": columns, "rows": rows[offset : offset + limit], "count": len(rows), "limit": limit, "offset": offset}
+        rows, columns, total = read_jsonl_rows(path, limit=limit, offset=offset)
+        return {"columns": columns, "rows": rows, "count": total, "limit": limit, "offset": offset}
+
+    def markdown_html(path: Path, *, max_bytes: int = 262144) -> str:
+        text = path.read_text(encoding="utf-8", errors="replace")[:max_bytes]
+        parts: list[str] = []
+        in_code = False
+        for line in text.splitlines():
+            escaped = html.escape(line)
+            if line.strip().startswith("```"):
+                parts.append("</code></pre>" if in_code else "<pre><code>")
+                in_code = not in_code
+            elif in_code:
+                parts.append(escaped)
+            elif line.startswith("#"):
+                level = min(len(line) - len(line.lstrip("#")), 6)
+                content = html.escape(line[level:].strip())
+                parts.append(f"<h{level}>{content}</h{level}>")
+            elif line.strip():
+                parts.append(f"<p>{escaped}</p>")
+            else:
+                parts.append("")
+        if in_code:
+            parts.append("</code></pre>")
+        return "\n".join(parts)
 
     async def dashboard(request: Any) -> HTMLResponse:
         runs = list_runs(root)
@@ -80,6 +218,8 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
     async def api_config_validate(request: Any) -> JSONResponse:
         try:
             payload = await request_payload(request)
+            if not csrf_valid(request, payload):
+                return JSONResponse({"error": "CSRF token required"}, status_code=403)
             if payload.get("config_path"):
                 config = load_config(payload["config_path"])
                 return JSONResponse({"valid": True, "config": {"path": str(config.path), "domain": config.domain, "target_mode": config.target_mode, "runs_root": str(config.runs_root)}})
@@ -90,7 +230,10 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
 
     async def api_create_config(request: Any) -> JSONResponse:
         try:
-            result = write_config_from_payload(await request_payload(request))
+            payload = await request_payload(request)
+            if not csrf_valid(request, payload):
+                return JSONResponse({"error": "CSRF token required"}, status_code=403)
+            result = write_config_from_payload(payload)
         except Exception as exc:  # noqa: BLE001 - surface browser form errors.
             return JSONResponse({"error": str(exc)}, status_code=409)
         return JSONResponse(result, status_code=201)
@@ -98,7 +241,9 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
     async def api_create_run(request: Any) -> JSONResponse:
         try:
             payload = await request_payload(request)
-            result = initialize_run_from_config(payload.get("config_path") or config_path or "", root, run_id=payload.get("run_id") or None, force=str(payload.get("force", "")).lower() in {"1", "true", "yes", "on"})
+            if not csrf_valid(request, payload):
+                return JSONResponse({"error": "CSRF token required"}, status_code=403)
+            result = initialize_run_from_config(payload.get("config_path") or config_path or "", root, run_id=payload.get("run_id") or None, force=bool_payload(payload.get("force")))
         except Exception as exc:  # noqa: BLE001 - surface browser form errors.
             return JSONResponse({"error": str(exc)}, status_code=409)
         return JSONResponse(result, status_code=201)
@@ -115,7 +260,10 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
 
     async def create_target_form(request: Any) -> Response:
         try:
-            result = write_config_from_payload(await request_payload(request))
+            payload = await request_payload(request)
+            if not csrf_valid(request, payload):
+                return PlainTextResponse("CSRF token required", status_code=403)
+            result = write_config_from_payload(payload)
         except Exception as exc:  # noqa: BLE001 - return form-friendly errors.
             return PlainTextResponse(str(exc), status_code=409)
         return RedirectResponse(f"/targets?created={result['path']}", status_code=303)
@@ -123,7 +271,9 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
     async def create_run_form(request: Any) -> Response:
         try:
             payload = await request_payload(request)
-            result = initialize_run_from_config(payload.get("config_path") or config_path or "", root, run_id=payload.get("run_id") or None, force=str(payload.get("force", "")).lower() in {"1", "true", "yes", "on"})
+            if not csrf_valid(request, payload):
+                return PlainTextResponse("CSRF token required", status_code=403)
+            result = initialize_run_from_config(payload.get("config_path") or config_path or "", root, run_id=payload.get("run_id") or None, force=bool_payload(payload.get("force")))
         except Exception as exc:  # noqa: BLE001 - return form-friendly errors.
             return PlainTextResponse(str(exc), status_code=409)
         return RedirectResponse(f"/runs/{result['run_id']}", status_code=303)
@@ -155,8 +305,8 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
 
     async def api_objects(request: Any) -> JSONResponse:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
-        objects = build_object_records(run_dir)
-        return JSONResponse({"run_id": run_dir.name, "count": len(objects), "objects": objects})
+        objects, total, limit, offset = filtered_objects(request, run_dir)
+        return JSONResponse({"run_id": run_dir.name, "count": total, "limit": limit, "offset": offset, "objects": objects})
 
     async def api_object_detail(request: Any) -> JSONResponse:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
@@ -167,15 +317,70 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
 
     async def object_library(request: Any) -> HTMLResponse:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
-        objects = build_object_records(run_dir)
-        return render(request, "artifacts.html", {"request": request, "run_id": run_dir.name, "objects": objects, "count": len(objects)})
+        objects, total, limit, offset = filtered_objects(request, run_dir)
+        all_objects = build_object_records(run_dir)
+        return render(request, "artifacts.html", {"request": request, "run_id": run_dir.name, "objects": objects, "all_objects": all_objects, "count": total, "limit": limit, "offset": offset})
 
     async def object_view(request: Any) -> Response:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
         record = resolve_object(run_dir, request.path_params["object_id"])
         if record is None:
             return PlainTextResponse("object not found", status_code=404)
-        return render(request, "artifact_view.html", {"request": request, "run_id": run_dir.name, "object": public_object(record)})
+        public = public_object(record)
+        path = record.get("_file_path")
+        render_data: dict[str, Any] = {}
+        if isinstance(path, Path) and path.is_file():
+            renderer = str(public.get("renderer") or "")
+            if renderer in {"jsonl", "events", "download-results", "dependency-graph", "site-manifest", "inventory", "selection", "canonical-inventory", "missing-dependencies", "normalization-results"}:
+                render_data = rows_for_object(path, public, limit=100, offset=0)
+            elif renderer == "external-links":
+                render_data = rows_for_object(path, public, limit=250, offset=0)
+            elif renderer == "markdown":
+                render_data = {"html": markdown_html(path)}
+            elif renderer == "json":
+                render_data = {"api_json": f"/api/runs/{run_dir.name}/objects/{public['object_id']}/json"}
+            elif renderer in {"pdf-metadata", "binary"}:
+                render_data = {"api_hex": f"/api/runs/{run_dir.name}/objects/{public['object_id']}/hex"}
+        return render(request, "artifact_view.html", {"request": request, "run_id": run_dir.name, "object": public, "render_data": render_data})
+
+    async def api_object_rows(request: Any) -> JSONResponse:
+        path, record, error = object_file(request)
+        if error:
+            return JSONResponse({"error": error.body.decode()}, status_code=error.status_code)
+        assert path is not None and record is not None
+        limit, offset = parse_limit_offset(request, default=100, maximum=1000)
+        try:
+            return JSONResponse(rows_for_object(path, record, limit=limit, offset=offset))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=415)
+
+    async def api_object_json(request: Any) -> JSONResponse:
+        path, record, error = object_file(request)
+        if error:
+            return JSONResponse({"error": error.body.decode()}, status_code=error.status_code)
+        assert path is not None and record is not None
+        if path.stat().st_size > 5 * 1024 * 1024:
+            return JSONResponse({"error": "JSON object is too large for inline parsing"}, status_code=413)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=415)
+        return JSONResponse({"object": public_object(record), "json": data})
+
+    async def api_object_hex(request: Any) -> JSONResponse:
+        path, record, error = object_file(request)
+        if error:
+            return JSONResponse({"error": error.body.decode()}, status_code=error.status_code)
+        assert path is not None and record is not None
+        try:
+            offset = max(0, int(request.query_params.get("offset", "0")))
+            length = max(1, min(int(request.query_params.get("length", "4096")), 65536))
+        except ValueError:
+            offset, length = 0, 4096
+        with path.open("rb") as handle:
+            handle.seek(offset)
+            chunk = handle.read(length)
+        return JSONResponse({"object": public_object(record), "offset": offset, "length": len(chunk), "hex": chunk.hex(), "ascii": "".join(chr(byte) if 32 <= byte < 127 else "." for byte in chunk)})
 
     def object_response(request: Any, *, mode: str) -> Response:
         run_dir = safe_run_dir(root, request.path_params["run_id"])
@@ -216,6 +421,8 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         payload: dict[str, Any] = {}
         if request.headers.get("content-type", ""):
             payload = await request_payload(request)
+        if not csrf_valid(request, payload):
+            return PlainTextResponse("CSRF token required", status_code=403)
         try:
             result = jobs.start(request.path_params["run_id"], request.path_params["stage"], config_path=payload.get("config_path"), options=payload)
         except (ConfigError, FileNotFoundError, RuntimeError, ValueError) as exc:
@@ -251,6 +458,11 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
             return PlainTextResponse("not found", status_code=404)
         return FileResponse(path)
 
+    async def site_preview(request: Any) -> HTMLResponse:
+        run_dir = safe_run_dir(root, request.path_params["run_id"])
+        site = run_dir / "staging" / "normalized-site"
+        return render(request, "site_preview.html", {"request": request, "run_id": run_dir.name, "site_ready": site.is_dir() and (site / "index.html").is_file()})
+
     async def site_file(request: Any) -> Response:
         try:
             run_dir = safe_run_dir(root, request.path_params["run_id"])
@@ -265,7 +477,7 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
             return PlainTextResponse(str(exc), status_code=403)
         if not path.is_file():
             return PlainTextResponse("not found", status_code=404)
-        return FileResponse(path, headers={"X-Robots-Tag": "noindex, noarchive", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline';"})
+        return FileResponse(path, headers={"X-Robots-Tag": "noindex, noarchive", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline';"})
 
     routes = [
         Route("/", dashboard),
@@ -289,6 +501,9 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         Route("/api/runs/{run_id}/artifacts", api_artifacts),
         Route("/api/runs/{run_id}/objects", api_objects),
         Route("/api/runs/{run_id}/objects/{object_id}", api_object_detail),
+        Route("/api/runs/{run_id}/objects/{object_id}/rows", api_object_rows),
+        Route("/api/runs/{run_id}/objects/{object_id}/json", api_object_json),
+        Route("/api/runs/{run_id}/objects/{object_id}/hex", api_object_hex),
         Route("/api/runs/{run_id}/objects/{object_id}/source", object_source),
         Route("/api/runs/{run_id}/objects/{object_id}/preview", object_preview),
         Route("/api/runs/{run_id}/objects/{object_id}/download", object_download),
@@ -304,6 +519,7 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
         Route("/runs/{run_id}/content/{object_id}/download", object_download),
         Route("/runs/{run_id}/content/{object_id}/bytes", object_bytes),
         Route("/runs/{run_id}/artifacts/{path:path}", artifact_file),
+        Route("/runs/{run_id}/preview", site_preview),
         Route("/runs/{run_id}/site/", site_file),
         Route("/runs/{run_id}/site/{path:path}", site_file),
         Mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static"),
@@ -311,8 +527,28 @@ def create_app(*, runs_root: str | Path = "runs", config_path: str | Path | None
     app = Starlette(debug=False, routes=routes)
 
     @app.middleware("http")
-    async def noindex_headers(request: Any, call_next: Any) -> Response:
+    async def security_and_headers(request: Any, call_next: Any) -> Response:
+        host = host_name(request.headers.get("host", ""))
+        if host and host not in host_allowlist:
+            return PlainTextResponse("Host not allowed", status_code=400)
+        request.state.csrf_token = request.cookies.get(CSRF_COOKIE) or secrets.token_urlsafe(32)
+        if not request_authenticated(request):
+            return PlainTextResponse("Authentication required", status_code=401, headers={"WWW-Authenticate": "Bearer"})
+        if request.method in UNSAFE_METHODS:
+            fetch_site = request.headers.get("sec-fetch-site", "").lower()
+            if fetch_site in {"cross-site", "none"}:
+                return PlainTextResponse("Cross-site unsafe request blocked", status_code=403)
+            origin = request.headers.get("origin")
+            referer = request.headers.get("referer")
+            if origin and not same_origin(request, origin):
+                return PlainTextResponse("Origin not allowed", status_code=403)
+            if not origin and referer and not same_origin(request, referer):
+                return PlainTextResponse("Referer not allowed", status_code=403)
         response = await call_next(request)
+        if request.query_params.get("token") == auth_token and auth_token:
+            response.set_cookie(AUTH_COOKIE, auth_token, httponly=True, samesite="strict", secure=request.url.scheme == "https")
+        if request.cookies.get(CSRF_COOKIE) != request.state.csrf_token:
+            response.set_cookie(CSRF_COOKIE, request.state.csrf_token, httponly=True, samesite="strict", secure=request.url.scheme == "https")
         response.headers.setdefault("X-Robots-Tag", "noindex, noarchive")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Cache-Control", "no-store")

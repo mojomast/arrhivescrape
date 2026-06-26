@@ -12,6 +12,7 @@
   <h2>Initialize a run</h2>
   <p class="muted">Choose a valid target config or paste a config path. The run stores a frozen config copy before any stages are started.</p>
   <form method="post" action="/runs" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Config path
       <input required name="config_path" list="target-configs" placeholder="configs/example.com.toml">
       <datalist id="target-configs">{% for target in targets if target.valid %}<option value="{{ target.path }}">{{ target.domain }}</option>{% endfor %}</datalist>

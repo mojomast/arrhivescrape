@@ -26,9 +26,11 @@
           <td>
             {% if target.valid %}
             <form method="post" action="/runs" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="config_path" value="{{ target.path }}">
               <label class="sr-only" for="run-id-{{ loop.index }}">Optional run id</label>
               <input id="run-id-{{ loop.index }}" name="run_id" placeholder="run id (optional)">
+              <label class="check-row"><input type="checkbox" name="force" value="true"> force</label>
               <button class="button secondary" type="submit">Create run</button>
             </form>
             {% else %}<span class="muted">Fix config first</span>{% endif %}

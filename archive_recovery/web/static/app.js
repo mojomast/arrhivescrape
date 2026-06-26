@@ -5,13 +5,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const kind = library.querySelector("[data-object-kind]");
     const stage = library.querySelector("[data-object-stage]");
     const preview = library.querySelector("[data-object-preview]");
+    const renderer = library.querySelector("[data-object-renderer]");
     const rows = Array.from(library.querySelectorAll("[data-object-row]"));
     const groups = Array.from(library.querySelectorAll("[data-object-group]"));
     const count = library.querySelector("[data-object-visible-count]");
     const empty = library.querySelector("[data-object-empty]");
     const matches = (row) => {
       const text = (search?.value || "").trim().toLowerCase();
-      return (!text || (row.dataset.search || "").includes(text)) && (!kind?.value || row.dataset.kind === kind.value) && (!stage?.value || row.dataset.stage === stage.value) && (!preview?.value || row.dataset.preview === preview.value);
+      return (!text || (row.dataset.search || "").includes(text)) && (!kind?.value || row.dataset.kind === kind.value) && (!stage?.value || row.dataset.stage === stage.value) && (!preview?.value || row.dataset.preview === preview.value) && (!renderer?.value || row.dataset.renderer === renderer.value);
     };
     const updateGroups = () => {
       groups.forEach((group) => {
@@ -35,7 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (count) count.textContent = String(visible);
       if (empty) empty.hidden = visible !== 0;
     };
-    [search, kind, stage, preview].forEach((control) => control?.addEventListener("input", applyFilters));
+    [search, kind, stage, preview, renderer].forEach((control) => control?.addEventListener("input", applyFilters));
     applyFilters();
   }
 
@@ -52,7 +53,12 @@ document.addEventListener("DOMContentLoaded", () => {
   source.addEventListener("error", () => setStatus("reconnecting", "disconnected"));
   source.addEventListener("progress", (message) => {
     setStatus("live", "connected");
-    const event = JSON.parse(message.data);
+    let event;
+    try {
+      event = JSON.parse(message.data);
+    } catch {
+      return;
+    }
     const item = document.createElement("li");
     const time = document.createElement("time");
     const level = document.createElement("span");

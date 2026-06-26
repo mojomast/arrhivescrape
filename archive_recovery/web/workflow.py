@@ -189,7 +189,7 @@ STAGE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "download": ("manifests/selection.pruned.jsonl",),
     "dependencies": ("manifests/selection.pruned.jsonl", "manifests/download.results.jsonl"),
     "normalize": ("manifests/selection.pruned.jsonl", "manifests/inventory.canonical.jsonl", "manifests/download.results.jsonl"),
-    "validate": ("manifests/site.manifest.jsonl",),
+    "validate": ("manifests/site.manifest.jsonl", "staging/normalized-site/"),
     "captures-browser": ("manifests/inventory.raw.jsonl",),
 }
 
@@ -211,7 +211,14 @@ def stage_readiness(run_dir: Path, stages: Any) -> dict[str, dict[str, Any]]:
     for stage in stages:
         requirements = list(STAGE_REQUIREMENTS.get(stage, ()))
         outputs = list(STAGE_OUTPUTS.get(stage, ()))
-        missing = [path for path in requirements if not (run_dir / path).exists()]
+        missing = []
+        for path in requirements:
+            target = run_dir / path.rstrip("/")
+            if path.endswith("/"):
+                if not target.is_dir() or not any(target.iterdir()):
+                    missing.append(path)
+            elif not target.exists():
+                missing.append(path)
         completed = bool(outputs) and all((run_dir / path).exists() for path in outputs)
         reasons: list[str] = []
         if missing:

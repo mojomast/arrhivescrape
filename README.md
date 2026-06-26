@@ -71,9 +71,9 @@ Start it from the repo root after installing the `web` extra:
 archive-recovery web --runs-root runs --config configs/example.com.toml
 ```
 
-The default bind is `127.0.0.1:18080`. Non-loopback binding requires the explicit `--allow-nonlocal` flag.
+The default bind is `127.0.0.1:18080`. Non-loopback binding requires the explicit `--allow-nonlocal` flag and an auth token via `--auth-token` or `--auth-token-file`; `--unsafe-no-auth` exists only for isolated throwaway testing. The web app also applies Host, Origin/Referer, Fetch Metadata, CSRF, noindex, no-store, and CSP guardrails.
 
-For tailnet-only access, bind to a Tailscale IP with `--allow-nonlocal` or use `tailscale serve` against a loopback instance. Keep generated run data private and do not expose the dashboard publicly.
+For tailnet-only access, bind to a Tailscale IP with `--allow-nonlocal --auth-token ...` or use `tailscale serve` against a loopback instance protected by the same token. Keep generated run data private and do not expose the dashboard publicly.
 
 Key local endpoints:
 
@@ -86,9 +86,9 @@ Key local endpoints:
 - `POST /api/runs/<run_id>/stages/<stage>` starts `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, or `captures-browser` when the run is ready for that stage.
 - `GET /api/status`, `/api/runs/<run_id>`, `/api/runs/<run_id>/status`, `/api/runs/<run_id>/events`, `/api/runs/<run_id>/events/stream`, `/api/runs/<run_id>/artifacts`, `/api/runs/<run_id>/objects`, and object detail/source/preview/download/bytes APIs provide machine-readable run state, event streams, artifact listings, and indexed object library access.
 - `GET /runs/<run_id>/objects` opens the object library, and `GET /runs/<run_id>/objects/<object_id>` opens the unified viewer for indexed artifacts and raw blobs referenced by manifests.
-- `GET /runs/<run_id>/site/` previews the normalized staging site with `X-Robots-Tag: noindex, noarchive` headers.
+- `GET /runs/<run_id>/preview` opens a trusted wrapper around a sandboxed staging iframe. `GET /runs/<run_id>/site/` serves private normalized staging files with `X-Robots-Tag: noindex, noarchive` and a restrictive CSP.
 
-The object library indexes manifests, reports, logs, config, ops files, CDX/capture-browser outputs, staging files, and raw content-addressed blobs referenced by manifests. Viewer access is intentionally split into safe `source`, `preview`, `download`, and `bytes` modes; archived HTML/JS is shown as inert source or downloaded bytes, not executed inside the viewer.
+The object library indexes manifests, reports, logs, config, ops files, CDX/capture-browser outputs, staging files, and raw content-addressed blobs referenced by manifests. Viewer access is intentionally split into safe `source`, structured rows/JSON/hex samples, `preview`, `download`, and `bytes` modes; archived HTML/JS is shown as inert source or downloaded bytes, not executed inside the viewer.
 
 All web responses default to `X-Robots-Tag: noindex, noarchive`; this is a safety belt for accidental exposure, not permission to publish run data. See [`docs/web-ui.md`](docs/web-ui.md) for operating details, safety guardrails, API notes, remaining limitations, and troubleshooting.
 

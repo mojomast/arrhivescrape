@@ -499,8 +499,12 @@ def command_captures_browser(args: argparse.Namespace) -> int:
 def command_web(args: argparse.Namespace) -> int:
     """Serve the optional local web UI when ASGI dependencies are installed."""
 
-    if args.host not in {"127.0.0.1", "localhost", "::1"} and not args.allow_nonlocal:
+    nonlocal_bind = args.host not in {"127.0.0.1", "localhost", "::1"}
+    if nonlocal_bind and not args.allow_nonlocal:
         raise SystemExit("web UI defaults to local-only. Use --allow-nonlocal intentionally to bind outside loopback.")
+    auth_token = args.auth_token or (Path(args.auth_token_file).read_text(encoding="utf-8").strip() if args.auth_token_file else "")
+    if nonlocal_bind and not auth_token and not args.unsafe_no_auth:
+        raise SystemExit("non-loopback web UI requires --auth-token or --auth-token-file. Use --unsafe-no-auth only for isolated throwaway testing.")
     try:
         import uvicorn  # type: ignore[import-not-found]
 
@@ -509,7 +513,7 @@ def command_web(args: argparse.Namespace) -> int:
         raise SystemExit("web UI requires optional dependencies: starlette jinja2 uvicorn") from exc
 
     try:
-        app = create_app(runs_root=args.runs_root, config_path=args.config)
+        app = create_app(runs_root=args.runs_root, config_path=args.config, auth_token=auth_token or None, allowed_hosts=[args.host, *args.allowed_host])
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
     uvicorn.run(app, host=args.host, port=args.port)
@@ -611,6 +615,10 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("--host", default="127.0.0.1", help="bind host; default: 127.0.0.1")
     web_parser.add_argument("--port", type=int, default=18080, help="bind port; default: 18080")
     web_parser.add_argument("--allow-nonlocal", action="store_true", help="allow binding the web UI outside loopback")
+    web_parser.add_argument("--auth-token", help="bearer/cookie token required to access the web UI")
+    web_parser.add_argument("--auth-token-file", help="file containing the web UI auth token")
+    web_parser.add_argument("--allowed-host", action="append", default=[], help="additional accepted Host header; repeatable")
+    web_parser.add_argument("--unsafe-no-auth", action="store_true", help="permit unauthenticated non-loopback web UI for isolated throwaway testing only")
     web_parser.set_defaults(func=command_web)
     return parser
 

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Staging Preview - {{ run_id }}{% endblock %}
+{% block body %}
+<div class="section-head">
+  <div>
+    <p class="eyebrow">Sandboxed Staging Preview</p>
+    <h1><code>{{ run_id }}</code></h1>
+    <p class="muted">Local/private normalized output. This is not publication approval.</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/runs/{{ run_id }}">Run</a>
+    <a class="button secondary" href="/runs/{{ run_id }}/site/">Open staging route</a>
+  </div>
+</div>
+
+<section class="panel warning">
+  <h2>Untrusted Archived Content</h2>
+  <p>The preview below is sandboxed. Scripts, forms, popups, plugin objects, and same-origin access are blocked by the iframe sandbox and route CSP. Treat the output as private until validation and privacy review pass.</p>
+</section>
+
+<section class="panel viewer-panel">
+  {% if site_ready %}
+  <iframe class="site-frame" title="Sandboxed staging-site preview" src="/runs/{{ run_id }}/site/" sandbox="" referrerpolicy="no-referrer"></iframe>
+  {% else %}
+  <p class="empty">No staging site is available yet. Run normalize first.</p>
+  {% endif %}
+</section>
+{% endblock %}

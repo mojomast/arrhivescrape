@@ -10,7 +10,7 @@ The current `archive_recovery` package now has the generic setup/interview comma
 - Shared config loading, run context/path handling, JSONL helpers, state helpers, Wayback/CDX access, URL normalization, MIME helpers, and content-addressed storage.
 - Migrated package stages for CDX inventory, capture selection, downloads, dependency discovery, static normalization, validation, and capture-browser generation.
 - CLI commands for `new`, `init`, `validate-config`, `inventory`, `select`, `download`, `dependencies`, `normalize`, `validate`, `captures-browser`, and `web`.
-- Optional local web UI foundation with dashboard, browser target config creation, run initialization, run detail, stage readiness/gating, live events, status/stage/artifact/object APIs, a unified artifact/object library, noindex responses, and staging-site preview.
+- Optional local web UI foundation with dashboard, browser target config creation, run initialization, run detail, stage readiness/gating, live events, status/stage/artifact/object APIs, a unified artifact/object library, noindex responses, CSRF/origin/auth guardrails, and sandboxed staging-site preview.
 
 ## Reuse Principle
 
@@ -53,12 +53,12 @@ Change only what prevents reuse:
 | --- | --- | --- |
 | Optional dependencies | Complete | `web` extra installs Starlette, Jinja2, and uvicorn without making them core dependencies. |
 | CLI entry point | Complete | `archive-recovery web` serves the local dashboard with configurable runs root, default config, host, and port. |
-| Local safety | Complete | Defaults to loopback and requires `--allow-nonlocal` for non-loopback binds. |
+| Local safety | Complete | Defaults to loopback, requires `--allow-nonlocal` plus auth for non-loopback binds, and applies Host, Origin/Referer, Fetch Metadata, CSRF, noindex, no-store, and CSP guardrails. |
 | Pages | Complete | Dashboard, targets, browser target creation, runs index with run initialization, run detail, artifact list, object library/viewer routes, events, metrics, readiness timeline, and staging-site preview. |
 | Stage runner | Complete | Starts one gated stage per run in-process, records status in `ops/status.json`, events in `logs/events.jsonl`, logs in `logs/<stage>.log`, and an active lock in `ops/stage-lock.json`. |
 | APIs | Complete | Exposes config defaults/validation/creation, run initialization/detail, status, stage readiness, events, event stream, artifacts, indexed objects, safe object source/preview/download/bytes modes, stage start, reports, artifacts, and staging-site file routes. |
-| Staging response safety | Complete | Adds `X-Robots-Tag: noindex, noarchive` to web responses and explicitly to staging-site preview responses. |
-| Object viewer safety | Complete | Indexes manifests, reports, logs, config, ops, CDX/capture-browser outputs, staging files, and manifest-referenced raw blobs while keeping archived HTML/JS inert in the viewer. |
+| Staging response safety | Complete | Adds a trusted `/preview` wrapper with sandboxed iframe plus `X-Robots-Tag: noindex, noarchive` and restrictive CSP on staging-site responses. |
+| Object viewer safety | Complete | Indexes manifests, reports, logs, config, ops, CDX/capture-browser outputs, staging files, and manifest-referenced raw blobs while keeping archived HTML/JS inert in the viewer and adding safe JSON/JSONL/Markdown/hex renderers. |
 
 ## Existing Scripts To Turn Into Plugins
 
@@ -152,16 +152,17 @@ archive-recovery phpbb wire-archive --run-id RUN_ID
 8. Migrated capture-browser generation.
 9. Added the optional local web frontend foundation.
 10. Added the unified artifact/object library and safe object viewer modes for source, preview, download, and bytes access.
+11. Added web CSRF/origin/auth guardrails, object renderer depth, visible parity controls, staging preview isolation, and focused web/object/CLI tests.
 
 ## Next Steps
 
-1. Add focused tests for URL normalization, output path mapping, MIME classification, Wayback error detection, dependency extraction, link rewriting, validation, web path-safety helpers, object indexing, safe viewer modes, and manifest-to-raw-blob provenance.
+1. Expand focused tests for URL normalization, output path mapping, MIME classification, Wayback error detection, dependency extraction, link rewriting, validation, and publication gates beyond the initial web/object/CLI smoke suite.
 2. Decide whether the dependency inventory feedback pass should return as a generic package stage or remain folded into targeted iteration workflows.
 3. Add generic `promote` and `serve` commands with explicit validation/privacy gates before any public output path is written.
 4. Promote phpBB/forum repair scripts into plugins without hardcoded target paths.
 5. Add stage cancellation or pause/resume controls for the local web UI if long-running operator sessions need them.
 6. Add optional web controls for safe stage-specific parameters beyond inventory `force` and `resume_key` only when the CLI behavior is stable.
-7. Add authentication or another explicit access-control layer before considering any non-tailnet shared deployment of the operator UI.
+7. Continue hardening authentication/session UX before considering any non-tailnet shared deployment of the operator UI.
 8. Expand object preview support only through conservative MIME/type allowlists; do not execute archived HTML or JavaScript in the viewer.
 9. Keep generated artifacts, raw data, logs, run directories, SQLite databases, and promoted site output ignored by git.
 

@@ -36,6 +36,12 @@ STAGES: dict[str, StageFunc] = {
 }
 
 
+def _option_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").lower() in {"1", "true", "yes", "on"}
+
+
 class JobManager:
     """Tiny in-process background runner for local operator use."""
 
@@ -56,7 +62,7 @@ class JobManager:
         ensure_runs_root_matches(config, self.runs_root)
         readiness = stage_readiness(run_dir, STAGES)
         stage_state = readiness.get(stage, {})
-        if stage != "inventory" and not stage_state.get("ready", False):
+        if not stage_state.get("ready", False):
             reasons = stage_state.get("reasons") or ["stage requirements are not satisfied"]
             raise RuntimeError(f"stage {stage} is not ready: {'; '.join(reasons)}")
         lock_path = run_dir / "ops" / "stage-lock.json"
@@ -111,7 +117,7 @@ class JobManager:
         # Keep the web runner intentionally conservative: expose only simple
         # defaults plus inventory force/resume controls used during iteration.
         if stage == "inventory":
-            return {"force": bool(options.get("force", False)), "resume_key": options.get("resume_key")}
+            return {"force": _option_bool(options.get("force")), "resume_key": options.get("resume_key") or None}
         return {}
 
     def _write_status(self, run_dir: Path, **status: Any) -> None:

@@ -22,19 +22,25 @@
     <label>Kind
       <select data-object-kind>
         <option value="">All kinds</option>
-        {% for kind in objects|map(attribute='kind')|unique|sort %}<option value="{{ kind|lower }}">{{ kind }}</option>{% endfor %}
+        {% for kind in all_objects|map(attribute='kind')|unique|sort %}<option value="{{ kind|lower }}">{{ kind }}</option>{% endfor %}
       </select>
     </label>
     <label>Stage
       <select data-object-stage>
         <option value="">All stages</option>
-        {% for stage in objects|map(attribute='stage')|unique|sort %}<option value="{{ stage|lower }}">{{ stage }}</option>{% endfor %}
+        {% for stage in all_objects|map(attribute='stage')|unique|sort %}<option value="{{ stage|lower }}">{{ stage }}</option>{% endfor %}
       </select>
     </label>
     <label>Preview
       <select data-object-preview>
         <option value="">All previews</option>
-        {% for preview in objects|map(attribute='preview_category')|unique|sort %}<option value="{{ preview|lower }}">{{ preview }}</option>{% endfor %}
+        {% for preview in all_objects|map(attribute='preview_category')|unique|sort %}<option value="{{ preview|lower }}">{{ preview }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Renderer
+      <select data-object-renderer>
+        <option value="">All renderers</option>
+        {% for renderer in all_objects|map(attribute='renderer')|unique|sort %}<option value="{{ renderer|lower }}">{{ renderer }}</option>{% endfor %}
       </select>
     </label>
     <div class="filter-count"><strong data-object-visible-count>{{ count }}</strong> of {{ count }} shown</div>
@@ -45,9 +51,9 @@
       <tbody>
       {% for object in objects %}
       {% if loop.changed(object.stage) %}<tr class="object-group" data-object-group><th colspan="4">{{ object.stage }} stage</th></tr>{% endif %}
-      <tr data-object-row data-kind="{{ object.kind|lower }}" data-stage="{{ object.stage|lower }}" data-preview="{{ object.preview_category|lower }}" data-search="{{ object.display_path|lower }} {{ object.object_id|lower }} {{ object.kind|lower }} {{ object.stage|lower }} {{ object.media_type|lower }} {{ object.source_url|default('', true)|lower }}">
+      <tr data-object-row data-kind="{{ object.kind|lower }}" data-stage="{{ object.stage|lower }}" data-preview="{{ object.preview_category|lower }}" data-renderer="{{ object.renderer|lower }}" data-search="{{ object.display_path|lower }} {{ object.object_id|lower }} {{ object.kind|lower }} {{ object.stage|lower }} {{ object.renderer|lower }} {{ object.media_type|lower }} {{ object.source_url|default('', true)|lower }}">
         <td class="object-name"><a href="/runs/{{ run_id }}/artifacts/view/{{ object.object_id }}"><code>{{ object.display_path }}</code></a><br><small>{{ object.object_id }}</small></td>
-        <td><div class="chip-row"><span class="chip">{{ object.kind }}</span><span class="chip stage">{{ object.stage }}</span><span class="chip preview {{ object.preview_category }}">{{ object.preview_category }}</span></div><small>{{ object.media_type }} · {{ object.size }} bytes · {{ object.mtime }}</small></td>
+        <td><div class="chip-row"><span class="chip">{{ object.kind }}</span><span class="chip stage">{{ object.stage }}</span><span class="chip preview {{ object.preview_category }}">{{ object.preview_category }}</span><span class="chip">{{ object.renderer }}</span></div><small>{{ object.media_type }} · {{ object.size }} bytes · {{ object.mtime }}</small></td>
         <td>{% if object.source_url %}<small class="source-url">{{ object.source_url }}</small>{% else %}<span class="muted">Local generated or manifest artifact</span>{% endif %}{% if object.warnings %}<br><span class="chip warning">warnings</span>{% endif %}</td>
         <td class="object-actions"><a href="/runs/{{ run_id }}/artifacts/view/{{ object.object_id }}">View</a>{% if object.preview_category == 'source' %}<a href="/runs/{{ run_id }}/content/{{ object.object_id }}/source">Source</a>{% elif object.preview_category in ['image', 'audio', 'video'] %}<a href="/runs/{{ run_id }}/content/{{ object.object_id }}/preview">Preview</a>{% endif %}<a href="/runs/{{ run_id }}/content/{{ object.object_id }}/download">Download</a></td>
       </tr>
