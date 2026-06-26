@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Runs - Archive Recovery{% endblock %}
+{% block body %}
+<div class="section-head">
+  <div>
+    <p class="eyebrow">Run Index</p>
+    <h1>Runs</h1>
+  </div>
+  <a class="button secondary" href="/api/status">JSON status</a>
+</div>
+{% include "runs_table.html" %}
+{% endblock %}

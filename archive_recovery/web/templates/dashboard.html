@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Archive Recovery{% endblock %}
+{% block body %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Recovery Workbench</p>
+    <h1>Operate Wayback recovery runs from one local console.</h1>
+    <p class="lede">Review configs, start safe pipeline stages, watch progress events, and inspect generated manifests, reports, capture browsers, and staging output.</p>
+  </div>
+  <div class="inspector">
+    <div class="label">Runs root</div>
+    <code>{{ runs_root }}</code>
+    <div class="label">Default config</div>
+    <code>{{ config_path or 'not set' }}</code>
+  </div>
+</section>
+
+<section class="grid stats">
+  <article><span>{{ runs|length }}</span><strong>Runs</strong></article>
+  <article><span>{{ runs|selectattr('status.state', 'equalto', 'running')|list|length }}</span><strong>Active</strong></article>
+  <article><span>{{ runs|sum(attribute='artifact_count') }}</span><strong>Artifacts</strong></article>
+</section>
+
+<section class="panel">
+  <div class="section-head">
+    <h2>Recent Runs</h2>
+    <a class="button secondary" href="/runs">View all</a>
+  </div>
+  {% include "runs_table.html" %}
+</section>
+{% endblock %}

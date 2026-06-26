@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ run_id }} - Archive Recovery{% endblock %}
+{% block body %}
+<div class="section-head">
+  <div>
+    <p class="eyebrow">Run Detail</p>
+    <h1><code>{{ run_id }}</code></h1>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/api/runs/{{ run_id }}/status">Status JSON</a>
+    <a class="button secondary" href="/api/runs/{{ run_id }}/artifacts">Artifacts JSON</a>
+  </div>
+</div>
+
+<section class="grid stats">
+  <article><span class="chip {{ status.state }}">{{ status.state }}</span><strong>Status</strong></article>
+  <article><span>{{ status.stage or 'none' }}</span><strong>Current stage</strong></article>
+  <article><span>{{ status.metrics.selected_captures }}</span><strong>Selected</strong></article>
+  <article><span>{{ status.metrics.normalized_files }}</span><strong>Public files</strong></article>
+</section>
+
+<section class="panel">
+  <h2>Stage Controls</h2>
+  <p class="muted">One stage may run per run. Network stages use the same pipeline functions as the CLI and write progress to <code>logs/events.jsonl</code>.</p>
+  <div class="stage-grid">
+    {% for stage in stages %}
+    <form method="post" action="/api/runs/{{ run_id }}/stages/{{ stage }}">
+      <button class="stage-button" type="submit">{{ stage }}</button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="grid two">
+  <article class="panel">
+    <div class="section-head compact"><h2>Live Events</h2><a href="/api/runs/{{ run_id }}/events">JSON</a></div>
+    <ol class="events" data-events-url="/api/runs/{{ run_id }}/events/stream">
+      {% for event in events %}
+      <li><time>{{ event.created_at }}</time><span class="level {{ event.level }}">{{ event.level }}</span>{{ event.message }}</li>
+      {% else %}
+      <li class="muted">No events yet.</li>
+      {% endfor %}
+    </ol>
+  </article>
+  <article class="panel">
+    <h2>Progress Counts</h2>
+    <dl class="metrics">
+      {% for key, value in status.metrics.items() %}
+      <div><dt>{{ key.replace('_', ' ') }}</dt><dd>{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="section-head compact"><h2>Artifacts</h2><a href="/runs/{{ run_id }}/site/">Open staging site</a></div>
+  <div class="artifact-list">
+    {% for artifact in artifacts %}
+    <a class="artifact" href="/runs/{{ run_id }}/artifacts/{{ artifact.path }}">
+      <span><code>{{ artifact.path }}</code></span>
+      <small>{{ artifact.stage }} · {{ artifact.kind }} · {{ artifact.size }} bytes</small>
+    </a>
+    {% else %}
+    <p class="empty">No manifests, reports, logs, or run config artifacts found yet.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel warning">
+  <h2>Privacy And Publication</h2>
+  <p>This UI serves only from local run artifacts and defaults to loopback operation. Do not publish <code>runs/</code>, <code>raw/</code>, <code>data/</code>, logs, manifests, or reports. Public promotion should remain blocked until validation and privacy review pass.</p>
+</section>
+{% endblock %}

@@ -16,5 +16,7 @@ This index explains the planning and specification documents for the generic Way
 | [`../review-reliability.md`](../review-reliability.md) | Reliability review of candidate implementation approaches. |
 | [`../review-dx.md`](../review-dx.md) | Developer experience review of setup, debugging, reports, and maintainability. |
 | [`../review-production.md`](../review-production.md) | Production readiness review of validation, serving, security posture, and publication safety. |
+| [`tooling-roadmap.md`](tooling-roadmap.md) | Reuse-first roadmap for turning the working local scripts into a generic tool suite. |
+| [`web-ui.md`](web-ui.md) | Operating guide for the optional local web dashboard, stage controls, APIs, and safety guardrails. |
 | [`PROGRESS.md`](PROGRESS.md) | Template for target-specific progress notes. Generated evidence belongs under ignored `runs/`. |
 | [`archive/original-planning/README.md`](archive/original-planning/README.md) | Historical archive of the original planning markdown used to build the first recovery. |

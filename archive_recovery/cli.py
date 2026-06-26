@@ -7,6 +7,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .config import ConfigError, load_config
+from .context import create_run_context, initialize_run
+from .pipeline.captures_browser import run_captures_browser
+from .pipeline.dependencies import run_dependencies
+from .pipeline.download import run_download
+from .pipeline.inventory import run_inventory
+from .pipeline.normalization import run_normalize
+from .pipeline.selection import run_selection
+from .pipeline.validation import run_validate
+from .state import init_db, register_run
+
 
 HOST_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$", re.I)
 TARGET_MODES = ("latest-good", "date-specific", "full-captures", "selected-eras")
@@ -287,6 +298,224 @@ def command_new(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_init(args: argparse.Namespace) -> int:
+    """Initialize a tracked recovery run from an existing TOML config."""
+
+    try:
+        config = load_config(args.config)
+        context = initialize_run(config, args.run_id, force=args.force)
+        init_db(config.sqlite_path)
+        register_run(
+            config.sqlite_path,
+            run_id=context.run_id,
+            config_path=str(config.path),
+            run_dir=str(context.run_dir),
+        )
+    except (ConfigError, FileExistsError) as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(f"Config: {config.path}")
+    print(f"Run: {context.run_id}")
+    print(f"Run directory: {context.run_dir}")
+    print(f"Run config: {context.run_config_path}")
+    print(f"State database: {config.sqlite_path}")
+    return 0
+
+
+def command_validate_config(args: argparse.Namespace) -> int:
+    try:
+        config = load_config(args.config)
+    except ConfigError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Config OK: {config.path}")
+    print(f"Domain: {config.domain}")
+    print(f"Target mode: {config.target_mode}")
+    print(f"Runs root: {config.runs_root}")
+    print(f"State database: {config.sqlite_path}")
+    return 0
+
+
+def pipeline_context(config_path: str, run_id: str | None):
+    """Load config and resolve a run context without assuming old local paths."""
+
+    config = load_config(config_path)
+    context = create_run_context(config, run_id)
+    context.ensure_dirs()
+    if not context.run_config_path.exists():
+        context.write_frozen_config()
+    return context
+
+
+def command_inventory(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_inventory(context, force=args.force, resume_key=args.resume_key)
+    except (ConfigError, FileExistsError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Inventory: {result.raw_path}")
+    print(f"CDX pages: {result.pages_dir}")
+    print(f"Pages fetched: {result.page_count}")
+    print(f"Records written: {result.record_count}")
+    return 0
+
+
+def command_select(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_selection(
+            context,
+            inventory_path=Path(args.inventory) if args.inventory else None,
+            selection_path=Path(args.selection_output) if args.selection_output else None,
+            canonical_path=Path(args.canonical_output) if args.canonical_output else None,
+            report_path=Path(args.report_output) if args.report_output else None,
+        )
+    except (ConfigError, FileExistsError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Raw rows: {result.raw_rows}")
+    print(f"Selected captures: {result.selected}")
+    print(f"Canonical records: {result.canonical_records}")
+    print(f"Selection: {result.selection_path}")
+    print(f"Canonical inventory: {result.canonical_path}")
+    print(f"Report: {result.report_path}")
+    return 0
+
+
+def command_download(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_download(
+            context,
+            selection_path=Path(args.selection) if args.selection else None,
+            results_path=Path(args.results_output) if args.results_output else None,
+            report_path=Path(args.report_output) if args.report_output else None,
+        )
+    except (ConfigError, FileExistsError, RuntimeError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Attempted: {result.attempted}")
+    print(f"Succeeded: {result.succeeded}")
+    print(f"Failed: {result.failed}")
+    print(f"Skipped: {result.skipped}")
+    print(f"Results: {result.results_path}")
+    print(f"Report: {result.report_path}")
+    return 0
+
+
+def command_dependencies(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_dependencies(
+            context,
+            selection_path=Path(args.selection) if args.selection else None,
+            download_path=Path(args.download_results) if args.download_results else None,
+            graph_path=Path(args.graph_output) if args.graph_output else None,
+            missing_path=Path(args.missing_output) if args.missing_output else None,
+            report_path=Path(args.report_output) if args.report_output else None,
+        )
+    except (ConfigError, FileExistsError, RuntimeError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Parsed HTML/CSS files: {result.parsed_files}")
+    print(f"References: {result.references}")
+    print(f"Missing first-party requests: {result.missing}")
+    print(f"Dependency graph: {result.graph_path}")
+    print(f"Missing requests: {result.missing_path}")
+    print(f"Report: {result.report_path}")
+    return 0
+
+
+def command_normalize(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_normalize(
+            context,
+            selection_path=Path(args.selection) if args.selection else None,
+            canonical_path=Path(args.canonical) if args.canonical else None,
+            download_path=Path(args.download_results) if args.download_results else None,
+            staging_site=Path(args.staging_site) if args.staging_site else None,
+            normalization_path=Path(args.normalization_output) if args.normalization_output else None,
+            site_manifest_path=Path(args.site_manifest_output) if args.site_manifest_output else None,
+            report_path=Path(args.report_output) if args.report_output else None,
+            mime_audit_path=Path(args.mime_audit_output) if args.mime_audit_output else None,
+        )
+    except (ConfigError, FileExistsError, RuntimeError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Normalized inputs: {result.normalized}")
+    print(f"Public files: {result.public_files}")
+    print(f"Collisions suffixed: {result.collisions}")
+    print(f"Staging site: {result.staging_site}")
+    print(f"Site manifest: {result.site_manifest_path}")
+    print(f"Report: {result.report_path}")
+    print(f"MIME audit: {result.mime_audit_path}")
+    return 0
+
+
+def command_validate(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_validate(
+            context,
+            staging_site=Path(args.staging_site) if args.staging_site else None,
+            site_manifest_path=Path(args.site_manifest) if args.site_manifest else None,
+            report_path=Path(args.report_output) if args.report_output else None,
+            external_links_path=Path(args.external_links_output) if args.external_links_output else None,
+        )
+    except (ConfigError, FileExistsError, RuntimeError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Checked files: {result.checked_files}")
+    print(f"Internal references: {result.internal_references}")
+    print(f"Missing references: {result.missing_references}")
+    print(f"External references: {result.external_references}")
+    print(f"MIME warnings: {result.mime_warnings}")
+    print(f"Report: {result.report_path}")
+    print(f"External links: {result.external_links_path}")
+    return 0
+
+
+def command_captures_browser(args: argparse.Namespace) -> int:
+    try:
+        context = pipeline_context(args.config, args.run_id)
+        result = run_captures_browser(
+            context,
+            inventory_path=Path(args.inventory) if args.inventory else None,
+            selection_path=Path(args.selection) if args.selection else None,
+            site_manifest_path=Path(args.site_manifest) if args.site_manifest else None,
+            output_dir=Path(args.output_dir) if args.output_dir else None,
+        )
+    except (ConfigError, FileExistsError, RuntimeError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Run: {context.run_id}")
+    print(f"Groups: {result.groups}")
+    print(f"Captures: {result.captures}")
+    print(f"HTML: {result.html_path}")
+    print(f"JSON: {result.json_path}")
+    return 0
+
+
+def command_web(args: argparse.Namespace) -> int:
+    """Serve the optional local web UI when ASGI dependencies are installed."""
+
+    if args.host not in {"127.0.0.1", "localhost", "::1"} and not args.allow_nonlocal:
+        raise SystemExit("web UI defaults to local-only. Use --allow-nonlocal intentionally to bind outside loopback.")
+    try:
+        import uvicorn  # type: ignore[import-not-found]
+
+        from .web import create_app
+    except ImportError as exc:
+        raise SystemExit("web UI requires optional dependencies: starlette jinja2 uvicorn") from exc
+
+    try:
+        app = create_app(runs_root=args.runs_root, config_path=args.config)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
+    uvicorn.run(app, host=args.host, port=args.port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="archive-recovery", description="Wayback/CDX static-site recovery toolkit")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -300,6 +529,89 @@ def build_parser() -> argparse.ArgumentParser:
     new_parser.add_argument("--dry-run", action="store_true", help="show outputs without writing files")
     new_parser.add_argument("--force", action="store_true", help="overwrite an existing config")
     new_parser.set_defaults(func=command_new)
+
+    init_parser = subparsers.add_parser("init", help="initialize a run from an existing recovery config")
+    init_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    init_parser.add_argument("--run-id", help="optional run id; defaults to a timestamp and target mode")
+    init_parser.add_argument("--force", action="store_true", help="overwrite an existing frozen run config")
+    init_parser.set_defaults(func=command_init)
+
+    validate_parser = subparsers.add_parser("validate-config", help="load and validate a recovery TOML config")
+    validate_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    validate_parser.set_defaults(func=command_validate_config)
+
+    inventory_parser = subparsers.add_parser("inventory", help="fetch a Wayback CDX inventory into the run manifest")
+    inventory_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    inventory_parser.add_argument("--run-id", required=True, help="run id to write under paths.runs_root")
+    inventory_parser.add_argument("--resume-key", help="resumeKey to use for the first inventory host")
+    inventory_parser.add_argument("--force", action="store_true", help="overwrite existing inventory manifest, CDX pages, and resume state")
+    inventory_parser.set_defaults(func=command_inventory)
+
+    select_parser = subparsers.add_parser("select", help="select best captures from an inventory JSONL manifest")
+    select_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    select_parser.add_argument("--run-id", required=True, help="run id containing or receiving manifests")
+    select_parser.add_argument("--inventory", help="input inventory JSONL; defaults to run manifests/inventory.raw.jsonl")
+    select_parser.add_argument("--selection-output", help="output selected JSONL; defaults to run manifests/selection.pruned.jsonl")
+    select_parser.add_argument("--canonical-output", help="output canonical inventory JSONL; defaults to run manifests/inventory.canonical.jsonl")
+    select_parser.add_argument("--report-output", help="selection report markdown path; defaults to run reports/selection-report.md")
+    select_parser.set_defaults(func=command_select)
+
+    download_parser = subparsers.add_parser("download", help="download selected Wayback captures into content-addressed raw storage")
+    download_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    download_parser.add_argument("--run-id", required=True, help="run id containing the selected manifest")
+    download_parser.add_argument("--selection", help="input selected JSONL; defaults to run manifests/selection.pruned.jsonl")
+    download_parser.add_argument("--results-output", help="download results JSONL; defaults to run manifests/download.results.jsonl")
+    download_parser.add_argument("--report-output", help="download report markdown path; defaults to run reports/download-report.md")
+    download_parser.set_defaults(func=command_download)
+
+    deps_parser = subparsers.add_parser("dependencies", help="discover static dependencies from downloaded HTML and CSS")
+    deps_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    deps_parser.add_argument("--run-id", required=True, help="run id containing download results")
+    deps_parser.add_argument("--selection", help="input selected JSONL; defaults to run manifests/selection.pruned.jsonl")
+    deps_parser.add_argument("--download-results", help="input download results JSONL; defaults to run manifests/download.results.jsonl")
+    deps_parser.add_argument("--graph-output", help="dependency graph JSONL; defaults to run manifests/dependency-graph.jsonl")
+    deps_parser.add_argument("--missing-output", help="missing dependency request JSONL; defaults to run manifests/missing-dependency-requests.jsonl")
+    deps_parser.add_argument("--report-output", help="dependency report markdown path; defaults to run reports/dependency-report.md")
+    deps_parser.set_defaults(func=command_dependencies)
+
+    normalize_parser = subparsers.add_parser("normalize", help="rewrite downloaded captures into a static staging site")
+    normalize_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    normalize_parser.add_argument("--run-id", required=True, help="run id containing download results")
+    normalize_parser.add_argument("--selection", help="input selected JSONL; defaults to run manifests/selection.pruned.jsonl")
+    normalize_parser.add_argument("--canonical", help="canonical inventory JSONL for alias routing; defaults to run manifests/inventory.canonical.jsonl")
+    normalize_parser.add_argument("--download-results", help="input download results JSONL; defaults to run manifests/download.results.jsonl")
+    normalize_parser.add_argument("--staging-site", help="output staging site directory; defaults to run staging/normalized-site")
+    normalize_parser.add_argument("--normalization-output", help="normalization results JSONL; defaults to run manifests/normalization.results.jsonl")
+    normalize_parser.add_argument("--site-manifest-output", help="site manifest JSONL; defaults to run manifests/site.manifest.jsonl")
+    normalize_parser.add_argument("--report-output", help="normalization report markdown path; defaults to run reports/normalization-report.md")
+    normalize_parser.add_argument("--mime-audit-output", help="MIME audit markdown path; defaults to run reports/mime-audit.md")
+    normalize_parser.set_defaults(func=command_normalize)
+
+    validate_site_parser = subparsers.add_parser("validate", help="validate internal links/assets and MIME basics in a normalized staging site")
+    validate_site_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    validate_site_parser.add_argument("--run-id", required=True, help="run id containing normalized staging site")
+    validate_site_parser.add_argument("--staging-site", help="staging site directory; defaults to run staging/normalized-site")
+    validate_site_parser.add_argument("--site-manifest", help="site manifest JSONL; defaults to run manifests/site.manifest.jsonl")
+    validate_site_parser.add_argument("--report-output", help="validation report markdown path; defaults to run reports/validation-report.md")
+    validate_site_parser.add_argument("--external-links-output", help="external links JSON path; defaults to run reports/external-links.json")
+    validate_site_parser.set_defaults(func=command_validate)
+
+    browser_parser = subparsers.add_parser("captures-browser", help="build a small static capture browser from inventory and local manifests")
+    browser_parser.add_argument("--config", required=True, help="path to recovery TOML config")
+    browser_parser.add_argument("--run-id", required=True, help="run id containing inventory manifests")
+    browser_parser.add_argument("--inventory", help="input inventory JSONL; defaults to run manifests/inventory.raw.jsonl")
+    browser_parser.add_argument("--selection", help="selection JSONL; defaults to run manifests/selection.pruned.jsonl")
+    browser_parser.add_argument("--site-manifest", help="site manifest JSONL; defaults to run manifests/site.manifest.jsonl")
+    browser_parser.add_argument("--output-dir", help="output directory; defaults to run reports/captures-browser")
+    browser_parser.set_defaults(func=command_captures_browser)
+
+    web_parser = subparsers.add_parser("web", help="serve the optional local web dashboard")
+    web_parser.add_argument("--runs-root", default="runs", help="runs directory to browse; default: runs")
+    web_parser.add_argument("--config", help="default recovery TOML config for starting stages")
+    web_parser.add_argument("--host", default="127.0.0.1", help="bind host; default: 127.0.0.1")
+    web_parser.add_argument("--port", type=int, default=18080, help="bind port; default: 18080")
+    web_parser.add_argument("--allow-nonlocal", action="store_true", help="allow binding the web UI outside loopback")
+    web_parser.set_defaults(func=command_web)
     return parser
 
 

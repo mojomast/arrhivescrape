@@ -1,0 +1,32 @@
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Run</th>
+        <th>Domain</th>
+        <th>Mode</th>
+        <th>State</th>
+        <th>Stage</th>
+        <th>Publication</th>
+        <th>Artifacts</th>
+        <th>Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td><a href="/runs/{{ run.run_id }}"><code>{{ run.run_id }}</code></a></td>
+        <td>{{ run.domain or 'unknown' }}</td>
+        <td>{{ run.target_mode or 'unknown' }}</td>
+        <td><span class="chip {{ run.status.state }}">{{ run.status.state }}</span></td>
+        <td>{{ run.status.stage or 'none' }}</td>
+        <td>{{ run.publication_intent }}</td>
+        <td>{{ run.artifact_count }}</td>
+        <td><time>{{ run.updated_at }}</time></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty">No runs found. Initialize a run with <code>archive-recovery init --config configs/example.com.toml --run-id my-first-run</code>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

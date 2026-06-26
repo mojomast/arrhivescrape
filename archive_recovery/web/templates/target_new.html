@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}New Target - Archive Recovery{% endblock %}
+{% block body %}
+<div class="section-head">
+  <div>
+    <p class="eyebrow">New Target</p>
+    <h1>Create a recovery config</h1>
+  </div>
+  <a class="button secondary" href="/targets">Back to targets</a>
+</div>
+
+<section class="panel">
+  <p>The web UI keeps config creation conservative: use the existing CLI interview so the generated TOML stays compatible with every pipeline stage.</p>
+  <div class="command-card"><code>archive-recovery new</code></div>
+  <p>For scripted defaults:</p>
+  <div class="command-card"><code>archive-recovery new --domain example.com --non-interactive</code></div>
+  <p>Then initialize a run and return to this UI:</p>
+  <div class="command-card"><code>archive-recovery init --config configs/example.com.toml --run-id my-first-run</code></div>
+</section>
+
+<section class="panel warning">
+  <h2>Safe Defaults</h2>
+  <p>New configs default to audit-only third-party handling, private/tailnet publication intent, loopback serving, form neutralization, and public approval gates.</p>
+</section>
+{% endblock %}
